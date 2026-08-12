@@ -1842,10 +1842,88 @@ Qed.
   *)
  End Quadrature.
  
+ (** 21.17  [from chapter 21].  Let x0, x1, ..., xn be points in the interval [a,b]. (In point of fact,
+        the points do not have to lie in the interval, and sometimes they don't.  But mostly they do.)
+        Then we wish to determine constants A0, A1, ... An such that,
+
+       [ deg(f) ≤ n ⇒ ∫_a^b f(x) dx = A0 f(x0) + A1 f(x1) + . . . + An f(xn) . ]       (21.5)
+
+       This problem has an elegant solution in terms of Lagrange polynomials:
+    
+        Let Li be the ith Lagrange polynomial over x0,x1,...,xn.  Then
+
+        [ Ai = ∫_a^b Li(x) dx ]       (21.6)
+ 
+        are the unique coefficients satisfying (21.5).
+
+      21.18  To prove the assertion first note that the rule must integrate the ith 
+          Lagrange polynomial.  Hence
+
+        [ ∫_a^b Li(x) = Σ_{j=0}^n Aj Lj(xj) = Ai Li(xi) = Ai, 
+
+       which says that the only possible for the Ai is given by (21.6).
+
+        Now let deg(f) ≤ n.  Then
+
+       [ f(x) = Σ_{i=0}^n f(xi) . ]
+
+        Hence
+
+        [ ∫_a^b Lj(x)dx = Σ_{i=0}^n f(xi) ∫_a^b Li(x)dx = Σ_{i=0}^n f(xi)Ai ]
+
+       which is just (21.5).
+
+ *)
+
+ Lemma extend_rootsE: forall [n] (roots: roots_of_ortho_p n) (i: 'I_n),
+     extend_roots n roots (nat_of_ord i) = tnth (ROOTS_vals roots) i.
+Proof.
+ intros.
+ rewrite /extend_roots /tnth.
+  apply set_nth_default.  rewrite /zeros_of_ortho_p size_tuple; apply ltn_ord.
+Qed.
+
   Lemma quadrature_exact_upto_n:
-      forall [n] roots (f: {poly R}), (size f <= n+1)%N -> ∫ (horner f) = G n roots (horner f).
-Proof. (* see section 21.17 *)
-Admitted.
+      forall [n] roots (f: {poly R}), (size f <= n.+1)%N -> ∫ (horner f) = G n.+1 roots (horner f).
+Proof. 
+  intros.
+  rewrite /G.
+  pose proof @lagrange_gen R n.+1 (extend_roots _ roots) erefl (extend_roots_injective _ _) f H.
+  rewrite {}H0. rewrite horner_sum' intgal_sum.
+ 2:{ clear; induction (index_enum _). rewrite big_nil. auto. rewrite big_cons. split; auto. apply in_continuous_horner.
+  }
+ apply eq_big; auto; intros.
+ set F := horner _.
+ rewrite (_: (fun x => F x)=F).
+  2: extensionality x; auto.
+ subst F.
+ rewrite hornerM' hornerC' intgal_linear1; auto with continuous.
+ rewrite /gauss_weight /L. rewrite mulrC. f_equal.
+ transitivity (\sum_j (f.[tnth (ROOTS_vals roots) j] * (i==j)%:R)).
+ 2:{ 
+  rewrite big_mkcond_idem. 2: simpl; lra. simpl.
+  apply eq_big; auto; intros.
+  rewrite {1}/extend_roots.
+  set u :=  nth _ _ _.
+  replace u with (tnth (zeros_of_ortho_p n.+1 roots) i0).
+  2:{ apply set_nth_default.  rewrite /zeros_of_ortho_p size_tuple; apply ltn_ord. }
+  clear u.
+  rewrite /zeros_of_ortho_p.
+  rewrite hornerM. rewrite hornerC.
+  f_equal.
+  symmetry. rewrite eq_sym.
+  rewrite -(@lagrange_sample R n.+1 (extend_roots n.+1 roots) erefl (extend_roots_injective _ _) i0 i).
+  f_equal.
+ rewrite extend_rootsE //. 
+ }
+ transitivity ( \sum_j (if j==i then f.[extend_roots n.+1 roots j] else 0)).
+  rewrite -big_mkcond_idem. 2: simpl; lra. simpl.
+  rewrite big_pred1_eq_id. lra.
+  apply eq_big; auto; intros. rewrite eq_sym. simpl. destruct (_ == _); simpl; try lra.
+  rewrite mulr1. f_equal. apply extend_rootsE.
+Qed.
+
+  (* Back to paragraph 23.16 *)
 
 From mathcomp Require Import polydiv. Import Pdiv.CommonRing.
 
