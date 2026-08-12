@@ -720,6 +720,15 @@ pose proof (ltn_ord j).
 Lia.lia.
 Qed.
 
+Lemma Rintegral_gt_0: 
+forall {R : realType} (a b: R) (h : Real.sort R -> Real.sort R), 
+   {in `[a, b]%classic, continuous h} ->
+   {in `[a, b]%classic, forall x, is_true (0 <= h x)} ->
+  ~ {in `[a, b]%classic, forall x, is_true (h x == 0)} ->
+    (0 <  \int[lebesgue_measure]_(x in `[a, b])  h x).
+Proof.
+Admitted.
+
 (* end details *)
 
 (** Now, on with the show.  The [Context] command parameterizes the whole development
@@ -885,7 +894,6 @@ Print monic_pred.  (* = fun [R] (p : {poly R}) => lead_coef p == 1 *)
        q = b_n p_n + b_{n-1} p_{n-1} + ⋯ + b_0 p_0.               (23.3)
 *)
 
- 
 
 Section P.
 
@@ -1296,71 +1304,43 @@ assert (@eq R c 1). lra. subst.
 apply @oner_neq0.
 Qed.
 
-Lemma natmul_inj: forall x y : nat, x%:R = y%:R :>R -> x=y :>nat.
-Admitted.
 
-Lemma Rintegral_gt_0: 
-forall (h : Real.sort R -> Real.sort R), 
-   {in `[a, b]%classic, continuous h} ->
-  {in `[a, b]%classic, forall x : Real.sort R, is_true (0 <= h x)} ->
-  ~ {in `[a, b]%classic, forall x : Real.sort R, is_true (h x == 0)} ->
- is_true
-   (0 <
-    \int[lebesgue_measure]_(x in `[a, b])
-      h x).
-Admitted.
-
-
-Lemma ortho_p2_positive: forall n,  ∫ (horner (ortho_p n * ortho_p n)) > 0.
+Lemma sqr_poly_positive: forall p: {poly R}, p != 0 ->  ∫ (horner (p * p)) > 0.
 Proof.
 intros.
-assert (size (ortho_p n * ortho_p n) = (n+n).+1). {
-pose proof (ortho_p_size n).
-Search (size (polyseq (_ * _))).
-rewrite size_proper_mul ?H.
-Lia.lia.
-move :(ortho_p_monic n).
-rewrite /monic_pred.
-set c := lead_coef _. clearbody c.
-move => H0.
-simpl in c.
-assert (@eq R c 1). lra. subst.
-rewrite mulr1.
-apply @oner_neq0.
-}
-assert (~ (forall x, a <= x <= b -> horner (polyseq (ortho_p n * ortho_p n)) x = 0)). {
+pose n := size p.
+assert (0 < n)%N by (rewrite -size_poly_eq0 in H; Lia.lia).
+assert (~ (forall x, a <= x <= b -> horner (p * p) x = 0)). {
 intro.
-pose rs := map (fun i => a + (b-a)/(n+n+3)%:R * i%:R) (iota 1 (n+n+2)). 
-assert (is_true (size rs < size (polyseq (ortho_p n * ortho_p n)))%N). {
+pose rs := map (fun i => a + (b-a)/(n+n+1)%:R * i%:R) (iota 1 (n+n)). 
+assert (is_true (size rs < size (polyseq (p * p)))%N). {
 apply max_poly_roots.
 -
-apply (@contraFneq _ false); [ | auto]. intro.
-apply poly_idomainAxiom in H1.
-rewrite Bool.orb_diag in H1.
-pose proof (ortho_p_nonzero n). rewrite H1 in H2. auto.
+rewrite - size_poly_eq0 size_proper_mul. change (size p) with n. Lia.lia.
+rewrite -lead_coef_eq0 in H. apply mulf_neq0; auto.
 -
 rewrite {}/rs.
-set f := _ * _ in H0|-*.
-clearbody f. clear H.
+set f := _ * _ in H1|-*.
+clearbody f. clearbody n. clear p H.
 rewrite all_map.
 rewrite /preim.
-apply (@sub_all _ [pred i | (0 < i < n+n+3)%N]).
+apply (@sub_all _ [pred i | (0 < i < n+n+1)%N]).
 +
 simpl.
 intros i ?. simpl in H. simpl.
-rewrite rootE. rewrite H0 //.
+rewrite rootE. rewrite H1 //.
 rewrite -mulrA.
-assert (0 < (n + n + 3)%:R^-1 * i%:R :> R). {
+assert (0 < (n + n + 1)%:R^-1 * i%:R :> R). {
 apply mulr_gt0.
 rewrite invr_gt0 ltr0n. Lia.lia.
 rewrite ltr0n. Lia.lia.
 }
-assert ((n + n + 3)%:R^-1 * i%:R < 1 :> R). {
+assert ((n + n + 1)%:R^-1 * i%:R < 1 :> R). {
 rewrite ltr_pdivrMl ?mulr1.
 rewrite ltr_nat. Lia.lia.
 rewrite ltr0n. Lia.lia.
 }
-set c :=  ((n + n + 3)%:R^-1 * i%:R)  in H1,H2|-*.
+set c :=  ((n + n + 1)%:R^-1 * i%:R)  in H3,H2|-*.
 assert (0 < (b-a)*c < b-a). {
 red; rewrite Bool.andb_true_iff; split; change (?A = true) with (is_true A); try nra.
 apply mulr_gt0; try lra.
@@ -1370,10 +1350,8 @@ rewrite subr_gt0 //.
 }
 lra.
 +
-replace (addn (addn n n) 3) with (S (addn (addn n n) 2)); [ | Lia.lia].
-set lo := S O. rewrite {2 4}/lo.
-set k := (n+n+2)%nat.
-replace (k.+1) with (k+lo)%nat by Lia.lia.
+set lo := S O.
+set k := (n+n)%nat.
 clearbody k. 
 clearbody lo.
 revert lo; induction k; simpl; intros; auto.
@@ -1386,33 +1364,32 @@ apply sub_all.
 intro; simpl; intro. Lia.lia.
 -
 rewrite /rs.
-pose proof (iota_uniq 1 (n+n+2)).
+pose proof (iota_uniq 1 (n+n)).
 rewrite map_inj_uniq //.
 hnf; intros.
-assert (0 <  (b - a) / (n + n + 3)%:R)%R.
+assert (0 <  (b - a) / (n + n + 1)%:R)%R.
 apply divr_gt0.
 rewrite subr_gt0 //.
 rewrite ltr0n. Lia.lia.
-set c := _ / _ in H2,H3.
+set c := _ / _ in H4,H3.
 clearbody c.
 simpl in *.
-apply natmul_inj.
-nra.
+apply /eqP. rewrite -(@eqr_nat R) /=. apply /eqP. nra.
 }
-rewrite H in H1.
+rewrite size_proper_mul in H2; [ | rewrite -lead_coef_eq0 in H; apply mulf_neq0; auto].
+fold n in H2.
 subst rs.
-rewrite size_map in H1.
-rewrite size_iota in H1. Lia.lia.
+rewrite size_map in H2.
+rewrite size_iota in H2. Lia.lia.
 }
-assert (forall x, 0 <= horner (ortho_p n * ortho_p n) x). {
+assert (forall x, 0 <= horner (p * p) x). {
 intros. rewrite hornerM.
 nra.
 }
-set g := horner (ortho_p n * ortho_p n) in H0,H1|-*.
+set g := horner (p * p) in H1,H2|-*.
 assert ( {in `[a, b]%classic, continuous g}).
 rewrite /g; auto with continuous.
 clearbody g. simpl in g.
-clear H.
 rewrite /∫.
 set h := fun x => g x * w x.
 assert {in `[a, b]%classic, continuous h}.
@@ -1420,13 +1397,13 @@ apply continuousM'; auto.
 assert (forall x,  is_true (a <= x <= b) ->  is_true (0 <= h x)).
 intros. rewrite /h. apply mulr_ge0; auto.
 assert (~ (forall x : Order.Preorder.sort (reals_Real__to__Order_Preorder R), is_true (a <= x <= b) -> h x = 0)).
-contradict H0.
+contradict H1.
 intros.
-specialize (H0 _ H4).
-rewrite /h in H0.
-pose proof (wpos _ H4).
+specialize (H1 _ H6).
+rewrite /h in H1.
+pose proof (wpos _ H6).
 assert (g x * w x == 0) by lra.
-rewrite mulIr_eq0 in H6.
+rewrite mulIr_eq0 in H8.
 lra; auto.
 apply /rregP.
 lra.
@@ -1436,15 +1413,20 @@ assert (
   prop_in1
     (mem (mkset (fun x : Real.sort R => is_true (in_mem x (mem (Interval (BSide true a) (BSide false b)))))))
     (inPhantom (forall x : Real.sort R, 0 <= h x))). {
-intro; intros. apply H3.
-rewrite /in_mem /=  /in_set /=  /pred_of_itv /= boolp.asboolb in H5.
-apply H5.
+intro; intros. apply H5.
+rewrite /in_mem /=  /in_set /=  /pred_of_itv /= boolp.asboolb in H7.
+apply H7.
 }
 assert (~ {in `[a, b]%classic, forall x : Real.sort R, is_true (h x == 0)}). {
-contradict H4. intros. apply /eqP. apply H4.
+contradict H6. intros. apply /eqP. apply H6.
 rewrite /in_mem /=  /in_set /=  /pred_of_itv /= boolp.asboolb //.
 }
 apply Rintegral_gt_0; auto.
+Qed.
+
+Lemma ortho_p2_positive: forall n,  ∫ (horner (ortho_p n * ortho_p n)) > 0.
+Proof.
+intros. apply sqr_poly_positive. apply ortho_p_nonzero.
 Qed.
 
 Lemma ortho_p_orthogonal_special': 
@@ -1598,6 +1580,12 @@ rewrite SIZExi.
 Lia.lia.
 Qed.
 
+Lemma ortho_p_orthogonal: 
+   forall i j, (i < j)%N -> orthogonal (horner (ortho_p j)) (horner (ortho_p i)).
+Proof.
+intros. apply (ortho_p_orthogonal' j); Lia.lia.
+Qed.
+
 (** ** Zeros of orthogonal polynomials *)
 
 (** 13.  It will turn out that the abscissas of our Gaussian quadrature formula will
@@ -1669,9 +1657,59 @@ apply lt_sorted_uniq in H1.
 auto.
 Qed.
 
+Lemma same_members_increasing_equal: 
+ forall (al1 : seq (Real.sort R)) (Hs1 : is_true (sorted <%R al1))
+          (al2 : seq (Real.sort R)) (Hs2 : is_true (sorted <%R al2))
+      (H : forall x : Real.sort R, is_true (x \in al1) <-> is_true (x \in al2)),
+  al1 = al2.
+Proof.
+clear.
+intros.
+ rewrite /in_mem /= in H.
+ revert al2 Hs2 H; induction al1; destruct al2; simpl in *; intros; auto.
+ specialize (H s). rewrite eq_refl /= in H.
+ destruct H as [_ H]. specialize (H ltac:(auto)). discriminate.
+ specialize (H a). rewrite eq_refl /= in H.
+ destruct H as [H _]. specialize (H ltac:(auto)). discriminate.
+ specialize (IHal1 (path_sorted Hs1) _ (path_sorted Hs2)).
+ destruct (eq_op s a) eqn:?H.
+ - assert (s=a) by (apply /eqP; auto). subst s. clear H0.
+  f_equal. apply IHal1. intros. specialize (H x). destruct (eq_op x a) eqn:?H.
+ +  assert (x=a) by (apply /eqP; auto). subst x. clear H H0 IHal1.
+    apply order_path_min in Hs1; [ | intros ? ? ?; lra].
+    apply order_path_min in Hs2; [ | intros ? ? ?; lra].
+   assert (mem_seq al1 a = false). {
+     induction al1; simpl; auto. simpl in Hs1. rewrite IHal1. lra.
+     destruct (a<a0); auto.
+  } rewrite {}H.
+   assert (mem_seq al2 a = false). {
+     induction al2; simpl; auto. simpl in Hs2. rewrite IHal2. lra.
+     destruct (a<a0); auto.
+  } rewrite {}H.
+  tauto.
+ + simpl in H. auto.
+- pose proof (H s). rewrite H0 eq_refl in H1. simpl in H1.
+  exfalso.
+  destruct H1 as [_ H1]. specialize (H1 ltac:(auto)).
+   assert (s < a \/ a < s) by lra; clear H0.
+  destruct H2.
+ + clear - H0 H1 Hs1.
+    apply order_path_min in Hs1; [ | intros ? ? ?; lra].
+    induction al1; simpl in *. discriminate. 
+     assert ((s == a0) = false) by lra. rewrite H /= in H1. 
+     apply IHal1; auto.  destruct (a<a0); auto.
+  +  pose proof (H a).
+     assert (a != s). clear H2 H1 H Hs2 IHal1. lra. destruct (a==s); try discriminate; simpl in *.
+     rewrite eq_refl /= in H2. pose proof (proj1 H2 ltac:(auto)).
+     clear - H0 H4 Hs2.
+    apply order_path_min in Hs2; [ | intros ? ? ?; lra].
+    induction al2; simpl in *. discriminate. 
+     assert ((a == a0) = false) by lra. rewrite H /= in H4. 
+     apply IHal2; auto.  destruct (s<a0); auto.
+Qed.
+ 
 Lemma roots_of_ortho_p_unique (n: nat) : forall r r' : roots_of_ortho_p n, r=r'.
 Proof.
-(* begin details: partial proof of this lemma *)
 move => r r'.
 move :(roots_of_ortho_p_at_most r) => J1.
 move :(roots_of_ortho_p_at_most r') => J2.
@@ -1685,29 +1723,13 @@ assert (forall x, x \in v1 <-> x \in v2). {
 }
 assert (v1 = v2). {
 clear - H Hs1 Hs2.
-revert v1 v2 Hs1 Hs2 H; induction n; simpl; intros.
-rewrite -boolp.eq_opE tuple0 eq_sym tuple0 //.
-specialize (IHn (tuple_behead v1) (tuple_behead v2)).
-rewrite -(tuple_rehead v1) -(tuple_rehead v2).
-assert (thead v1 = thead v2). {
- pose proof (H (thead v1)).
- pose proof (H (thead v2)).
- shelve.
-}
-rewrite H0.
-rewrite IHn; auto.
-rewrite -(tuple_rehead v1) in Hs1.
-simpl in Hs1. apply path_sorted in Hs1; auto.
-rewrite -(tuple_rehead v2) in Hs2.
-simpl in Hs2. apply path_sorted in Hs2; auto.
-intros.
-shelve.
+ apply tuple_ext.
+ rewrite ?memtE in H.
+ apply same_members_increasing_equal; auto.
 }
 subst v1.
 f_equal; apply eq_irrelevance.
-all: fail.
-(* end details *)
-Abort.  (* This should be straightforward but we don't need it at the moment. *)  
+Qed.
 
 (** _Editor's note:   Stewart's derivation talks about "THE roots" of the polynomial, as if
   they constructively exist.  Well, indeed they do exist, but_:
@@ -1798,7 +1820,7 @@ Abort.  (* This should be straightforward but we don't need it at the moment. *)
   Definition L : n.-tuple {poly_n R} := lagrange n extend_roots.
   Definition gauss_weight (i: 'I_n) := ∫ (horner (tnth L i)).
 
-  Definition G (f: R->R) := \sum_i (gauss_weight i * (f (tnth zeros_of_ortho_p i))).
+  Definition G (f: R->R) := \sum_(i<n) (gauss_weight i * (f (tnth zeros_of_ortho_p i))).
 
   (** 16.  To establish this result, first note that by construction the integration formula
     [G_n f] is exact for polynomials of degree less than or equal to n (see section 21.17).
@@ -1818,12 +1840,63 @@ Abort.  (* This should be straightforward but we don't need it at the moment. *)
        -          = ∫ f                                                (by 23.4).
       Quot erat demonstrandum.
   *)
+ End Quadrature.
+ 
+  Lemma quadrature_exact_upto_n:
+      forall [n] roots (f: {poly R}), (size f <= n+1)%N -> ∫ (horner f) = G n roots (horner f).
+Proof. (* see section 21.17 *)
+Admitted.
 
+From mathcomp Require Import polydiv. Import Pdiv.CommonRing.
 
+  Lemma quadrature_exact_for': 
+      forall [n] (roots : roots_of_ortho_p n.+1) (f: {poly R}), 
+            (size f <= 2*n+2)%N ->  ∫ (horner f) = G n.+1 roots (horner f).
+Proof.
+ intros.
+ move :(divp_eq f (ortho_p n.+1)) => H0.
+ move :(@size_divp _ f (ortho_p n.+1) (ortho_p_nonzero _)); rewrite ortho_p_size => SIZEq.
+ move :(@ltn_modpN0 _ f (ortho_p n.+1) (ortho_p_nonzero _)); rewrite ortho_p_size => SIZEr.
+ set q := (f %/ ortho_p n.+1) in H0 SIZEq. clearbody q.
+ set r := (f %% ortho_p n.+1) in H0 SIZEr. clearbody r.
+ rewrite /G H0.
+ symmetry.
+ transitivity  (\sum_i gauss_weight n.+1 roots i * r.[tnth (zeros_of_ortho_p n.+1 roots) i]). {
+    apply eq_big; auto => /= i _. f_equal.
+    rewrite hornerD hornerM.
+    rewrite -{2}(add0r(horner r _)). f_equal.
+    rewrite -(mulr0 (horner q (tnth (zeros_of_ortho_p n.+1 roots) i))). f_equal.
+    rewrite /zeros_of_ortho_p.
+    apply /rootP.
+    apply /all_tnthP.
+    apply ROOTS_zero.
+}
+ rewrite -/(G n.+1 roots (horner r)).
+ rewrite -quadrature_exact_upto_n ; [ | set j := size r in SIZEr|-*; clearbody j; Lia.lia].
+ rewrite hornerD'  intgal_linear2; auto with continuous.
+ rewrite mulrC. rewrite hornerM'.
+ rewrite polySn_orthogonal_n.
+ 2: exact ortho_p_size. 2: exact ortho_p_monic.
+ 3:{
+ assert (size q == 0 \/ size q > 0)%N by Lia.lia.
+ destruct H1. move :H1 => /eqP H2. rewrite H2; auto.
+  rewrite size_poly_gt0 in H1.
+  rewrite SIZEq. set j := size f in H|-*. Lia.lia.
+ }
+ 2:{ split. exact ortho_p_size. intros. red. rewrite mul_funC. apply ortho_p_orthogonal. Lia.lia. }
+ lra.
+Qed.
 
   Lemma quadrature_exact_for: 
-      forall f: {poly R}, (size f <= 2*n+2)%N -> ∫ (horner f) = G (horner f).
-  Admitted.
+      forall [n] (roots : roots_of_ortho_p n)  (f: {poly R}), (size f <= 2*n)%N ->  ∫ (horner f) = G n roots (horner f).
+Proof.
+destruct n.
++ intros. assert (size f == 0)%N by Lia.lia. rewrite size_poly_eq0 in H0.
+   move :H0 => /eqP H0; subst f.
+   rewrite -(mulr0 (polyC 0)) hornerM' /G big_ord0 hornerC'. 
+   rewrite intgal_linear1; auto with continuous. rewrite mul0r //.
++ rewrite (_: 2*n.+1 =  2*n+2)%N;[ | Lia.lia]. exact (@quadrature_exact_for' n).
+Qed.
 
 (** 17. An important corollary of these results is that the coefficients [A_i] are positive.
        To see this note that
@@ -1834,15 +1907,63 @@ Abort.  (* This should be straightforward but we don't need it at the moment. *)
 
              [  0 < ∫ L_i^2 = Σ_j A_i L_i^2(x_j) = A_i ].
 *)
-   Lemma gauss_weight_positive: forall i, gauss_weight i > 0.
-   Admitted.
+   Lemma gauss_weight_positive: forall [n] roots i, gauss_weight n roots i > 0.
+   Proof.
+    intros.
+    destruct n; [destruct i; Lia.lia |].
+    pose proof @lagrange_sample R n.+1 (extend_roots n.+1 roots) ltac:(Lia.lia) (extend_roots_injective _ roots).
+    fold (L _ roots) in H.
+    assert (size (tnth (L n.+1 roots) i) = n.+1)
+      by (apply size_lagrange_; [reflexivity | apply extend_roots_injective]).
+   assert ( tnth (L n.+1 roots) i != 0 ). {
+      rewrite /L.
+      apply /eqP. intro. rewrite H1 in H0. rewrite size_poly0 in H0. discriminate.
+  }
+    pose proof sqr_poly_positive (tnth (L n.+1 roots) i) H1.
+   rewrite (quadrature_exact_for roots) in H2.
+    2:{ set u := tnth _ _ in H0,H1|-*. clearbody u.
+        rewrite size_proper_mul. Lia.lia.
+         pose proof (lead_coef_eq0 u). set z := u==0 in H2. change ((lead_coef u == 0) = z) in H2.
+         change (_ == _) with z in H1. rewrite -H2 in H1.
+         apply mulf_neq0; auto.
+    }
+   set u := G _ _ _ in H2.
+   rewrite (_: gauss_weight n.+1 roots i = u); auto; subst u; clear H2.
+   rewrite /G.
+   transitivity (\sum_(j<n.+1) (gauss_weight n.+1 roots j * (j==i)%:R)).
+   2:{ apply eq_big; auto. intros j _. rewrite hornerM. rewrite /L.
+        rewrite /L in H. rewrite (eq_sym j i).
+        replace (tnth _ j) with (extend_roots n.+1 roots j).
+        2:{ rewrite /extend_roots. rewrite /tnth. apply set_nth_default.
+             rewrite /zeros_of_ortho_p size_tuple. apply ltn_ord.
+        }
+      rewrite H. f_equal. destruct (i==j); simpl; try lra.
+  }
+  clear H H0 H1.
+  set f := gauss_weight _ _. clearbody f. simpl in f.
+  transitivity (\sum_(j<n.+1) if (j==i) then f j else 0).
+  2: apply eq_big; auto; intros; destruct (_ == _); simpl; lra.  
+  rewrite -big_mkcond_idem. 2: simpl; lra.
+  rewrite big_pred1_eq_id. simpl; lra.
+Qed.
 
 (** 18.  Since [ A_0 + A_1 + ⋯ + A_n = ∫ 1 ], no coefficient can be larger than 1.  Consequently,
      we cannot have a situation in which large coefficients create large intermediate results
       that suffer cancellation when they are added. *)
 
-   Lemma gauss_weight_leq_1:  forall i, gauss_weight i <= 1.
-   Admitted.
+
+   Lemma gauss_weight_leq_1:  forall [n] roots i, gauss_weight n roots i <= ∫ (horner 1).
+   Proof.
+   intros.
+    destruct n. destruct i. Lia.lia.
+    rewrite (@quadrature_exact_for _ roots).
+    2: rewrite size_poly1; Lia.lia.
+    rewrite /G. rewrite hornerC' -mulr_suml mulr1.
+    replace (gauss_weight n.+1 roots i) with (\sum_j (if (j==i) then gauss_weight n.+1 roots j else 0)).
+    apply ler_sum. intros. destruct (i0==i); auto. pose proof (gauss_weight_positive roots i0). lra.
+    rewrite -big_mkcond_idem. simpl. 2: simpl; lra.
+  rewrite big_pred1_eq_id. simpl; lra.
+ Qed.
 
 (** ** Error and convergence *)
 
@@ -1852,9 +1973,9 @@ Abort.  (* This should be straightforward but we don't need it at the moment. *)
         [  ∫  f - G_n f =  ( f^(2n+2)(ξ) / (2n+2)!) ∫ p_{n+1}^2 ],
 
      where ξ ∈ [[a,b]]. *)
-  Lemma quadrature_error: forall (f: R->R),
+  Lemma quadrature_error: forall n roots (f: R->R),
       exists ξ:R, a <= ξ <= b /\
-       ∫ f - G f =  
+       ∫ f - G n roots f =  
        derive1n (2*n+2) f ξ /
         (factorial(2*n+2))%:R * ∫ (fun x => (horner (ortho_p(n.+1)) x)^2).
   Admitted.
@@ -1869,12 +1990,12 @@ Abort.  (* This should be straightforward but we don't need it at the moment. *)
     there is a sequence of polynomials that converges uniformly to f.
 *)
 
+(*  TODO: fix the "roots"  parameter of G
   Lemma quadrature_converges:  forall (f: Real.sort R -> Real.sort R) (x: R),
-    (forall x, continuous_at x f) -> limn (fun n => G f) = ∫ f.
+    (forall x, continuous_at x f) -> limn (fun n => G n roots f) = ∫ f.
   Abort.  (* Provable I'm sure, but it's not clear that we need it. *)
+*)
 
-
-End Quadrature.
 End Integral.
 End R.
 (** ** Examples *)
