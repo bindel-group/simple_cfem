@@ -300,6 +300,15 @@ rewrite mulrC polyseqMX //.
 rewrite /Algebra.zero /= /eq_op /= polyseqC eq_refl //.
 Qed.
 
+Lemma polyX8': 'X * ('X * ('X * ('X * ('X * ('X * ('X * 'X)))))) = @Polynomial R [:: 0; 0; 0; 0; 0; 0; 0; 0; 1] oner_neq0.
+Proof.
+intros.
+apply poly_inj.
+rewrite polyX7'.
+rewrite mulrC polyseqMX //.
+rewrite /Algebra.zero /= /eq_op /= polyseqC eq_refl //.
+Qed.
+
 Definition integ (p: {poly R}) : {poly R} := cons_poly 0 (\poly_(i < (size p)) (p`_i / ((S i)%:R))).
 
 Lemma deriv_integ: forall p: {poly R}, deriv (integ p) = p.
@@ -2323,8 +2332,15 @@ repeat expand_bigop.
 ring.
 Qed.
 
+Lemma intgal_X8:  ∫ (horner ('X * ('X * ('X * ('X * ('X * ('X * ('X * 'X)))))))) = 2/9.
+Proof.
+rewrite polyX8' intgal_eq ?r_integral /lo /hi /integ /= ?hornerE ?horner_poly.
+repeat expand_bigop.
+ring.
+Qed.
+
 Definition r_intgal := (intgal_linear, intgal_0, intgal_1, intgal_C, intgal_X, intgal_X2, 
-                      intgal_X3, intgal_X4, intgal_X5, intgal_X6, intgal_X7).
+                      intgal_X3, intgal_X4, intgal_X5, intgal_X6, intgal_X7, intgal_X8).
 
 Lemma pull_left1: forall u: {poly R}, 'X * u = u * 'X.
 Proof. intros. ring. Qed.
@@ -3320,6 +3336,46 @@ Qed.
   Proof.
   intros. apply legendre_quadrature_error.
  Qed.
+
+Locate "`|".
+
+Definition quadrature_error_bound (f: R -> R) (n: 'I_5) (b: R) : Prop :=
+    forall x: R, (-1 <= x <= 1)%R -> 
+     `| (derive.derive1n (2*n+2) f x) | <= 
+       b * ((factorial (2*n+2))%:R  / ∫ (fun x => (horner (legendre n.+1) x)^2)) .
+
+Lemma quadrature_error_bound_is_bound:
+  forall n f b,
+   quadrature_error_bound f n b ->
+     `|  ∫ f - Gauss_Legendre_quadrature n f | <= b.
+Proof.
+intros.
+destruct (legendre_quadrature_error' n f) as [ξ [H1 H2]].
+rewrite {}H2.
+specialize (H _ H1).
+set u := ∫ _ in H|-*.
+assert (0 < u). {
+  assert (H0 := sqr_poly_positive  _ _ lo_lt_hi w w_positive ltac:(auto with continuous)
+    (legendre (nat_of_ord n).+1) (ortho_p_nonzero _ _ lo_lt_hi _ _)).
+ rewrite hornerM' in H0; apply H0.
+}
+clearbody u. simpl in u.
+set y := _ ξ in H|-*. clearbody y.
+set g := (2 * nat_of_ord n + 2)%N in H|-*. clearbody g.
+pose proof (fact_gt0 g).
+set h := g`! in H,H2|-*. clearbody h. clear g ξ H1.
+assert (0 < h%:R :> R) by (destruct h; try discriminate; apply ltr0Sn).
+clear H2. simpl in H1.
+rewrite -mulrA (mulrC _ u).
+pose proof (divr_gt0 H0 H1).
+rewrite (_: b = b * (u / h%:R) * (h%:R / u)).
+ 2: rewrite -mulrA -(invf_div u h%:R) divff; lra.
+rewrite -(mulrA _ (u / _)).
+rewrite (mulrC (u / _)).
+rewrite (mulrA _ (_/u)).
+rewrite ler_norml. rewrite ler_norml in H.
+nra.
+Qed.
 
 End R.
 

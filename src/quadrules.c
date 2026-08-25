@@ -228,3 +228,31 @@ double hughes_weight(int i, int npts)
 {
     return 1.0/6.0;
 }
+
+/**
+ * ## Demonstration of Quadrature
+ * 
+ * The remainder of this file is not needed for FEM, but
+ * serves as a self-contained demonstration for specification
+ * and verification of Gauss-Legendre quadrature as a
+ * floating-point C program.
+ */
+
+extern double cos(double);
+
+double integrate (double (*f)(double), int n) {
+  int i;
+  double s = 0.0;
+  for (i=0; i<n; i++) {
+    s += gauss_weight(i,n) * f(gauss_point(i,n));
+  }
+  return s;
+}
+
+double testfun(double x) {
+  return 0.5 * (1-x) * cos(x);
+}
+
+double integrate_testfun (void) {
+  return integrate(&testfun, 2);
+}

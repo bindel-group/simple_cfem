@@ -257,7 +257,7 @@ Definition gauss2d_npoint1d_spec : ident * funspec :=
   approximations of the real-valued Gauss points and weights, so 
   we import all the appropriate stuff now. *)
 
-Require Import CFEM.quadrature.  Import Legendre.
+From CFEM Require Import quadrature quadrature2 quadmodel_accuracy.  Import Legendre.
 Require Import Interval.Tactic.
 From mathcomp Require Import Rstruct.
 From Stdlib Require Import Reals.
@@ -271,13 +271,55 @@ Definition float_near (r: R) (x: ftype Tdouble) :=
   (Rabs (FT2R x - r) <= Rabs (FT2R x) * half_an_ulp)%R.
 
 (** The ith Gauss point of Legendre polyomial n *)
-Definition ith_gauss_point(n: 'I_5) (i: 'I_n) : R :=
+Definition ith_gauss_point [n: 'I_5] (i: 'I_n) : R :=
     (tuple.tnth (ROOTS_vals  Legendre.lo Legendre.hi Legendre.w n
                               (LR_roots _ (nth_iseq some_legendre_roots n))) i).
 
 (** The ith Gauss weight of Legendre polyomial n *)
-Definition ith_gauss_weight (n: 'I_5) (i: 'I_n) : R :=
+Definition ith_gauss_weight [n: 'I_5] (i: 'I_n) : R :=
  tuple.tnth (GW_vals _ (nth_iseq some_gauss_weights n)) i.
+
+Definition gauss_weight_f [n: 'I_5] (i: 'I_n) := 
+    Znth ((Z.of_nat n)*(Z.of_nat n - 1)/2 + Z.of_nat i) gauss_wts_list.
+
+Definition gauss_point_f [n: 'I_5] (i: 'I_n) := 
+    Znth ((Z.of_nat n)*(Z.of_nat n - 1)/2 + Z.of_nat i) gauss_pts_list.
+
+Lemma gauss_points_acc: forall (n: 'I_5) (i: 'I_n),  float_near (ith_gauss_point i) (gauss_point_f i).
+Proof.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+red;
+set (d := half_an_ulp); hnf in d; simpl in d; subst d;
+unfold ith_gauss_point, gauss_point_f, tuple.tnth; simpl;
+try change nmodule.Algebra.zero with 0%R;
+repeat change (ssralg.GRing.mul ?A ?B) with (A*B)%R;
+repeat change (nmodule.Algebra.opp ?A) with (- A)%R;
+repeat change (nmodule.Algebra.add ?A ?B) with (A + B)%R;
+try change (ssralg.GRing.one _) with 1%R;
+repeat change (ssralg.GRing.inv ?A) with (/A)%R;
+rewrite <- ?Rstruct.RsqrtE, <- ?Rstruct.INRE, ?Rminus_diag;
+first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+Qed.
+
+Lemma gauss_weights_acc: forall (n: 'I_5) (i: 'I_n),  float_near (ith_gauss_weight i) (gauss_weight_f i).
+Proof.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+red;
+set (d := half_an_ulp); hnf in d; simpl in d; subst d;
+unfold ith_gauss_weight, gauss_weight_f, tuple.tnth; simpl;
+try change nmodule.Algebra.zero with 0%R;
+repeat change (ssralg.GRing.mul ?A ?B) with (A*B)%R;
+repeat change (nmodule.Algebra.opp ?A) with (- A)%R;
+repeat change (nmodule.Algebra.add ?A ?B) with (A + B)%R;
+try change (ssralg.GRing.one _) with 1%R;
+repeat change (ssralg.GRing.inv ?A) with (/A)%R;
+rewrite <- ?Rstruct.RsqrtE, <- ?Rstruct.INRE, ?Rminus_diag;
+first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+Qed.
 
 (** The high-level spec of the gauss_point function says that it returns
   a floating-point value that's as close as possible to the ith Gauss point
@@ -294,7 +336,7 @@ Definition gauss_point_spec : ident * funspec :=
     SEP( gauss_pts_pred gv )
   POST[ tdouble] let '(existT _ n i) := X in 
     EX x: ftype Tdouble,
-    PROP(float_near (ith_gauss_point n i) x)
+    PROP(float_near (ith_gauss_point i) x)
     RETURN (Vfloat x)
     SEP( gauss_pts_pred gv ).
 
@@ -321,19 +363,7 @@ entailer!.
 rewrite <- H4. clear rho' H3 H4.
 Exists x.
 entailer!!.
-destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
-destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
-red;
-set (d := half_an_ulp); hnf in d; simpl in d; subst d;
-unfold ith_gauss_point, tuple.tnth; simpl;
-try change nmodule.Algebra.zero with 0%R;
-repeat change (ssralg.GRing.mul ?A ?B) with (A*B)%R;
-repeat change (nmodule.Algebra.opp ?A) with (- A)%R;
-repeat change (nmodule.Algebra.add ?A ?B) with (A + B)%R;
-try change (ssralg.GRing.one _) with 1%R;
-repeat change (ssralg.GRing.inv ?A) with (/A)%R;
-rewrite <- ?Rstruct.RsqrtE, <- ?Rstruct.INRE, ?Rminus_diag;
-first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+apply gauss_points_acc.
 Qed.
 (* end details *)
 
@@ -350,7 +380,7 @@ Definition gauss_weight_spec : ident * funspec :=
     SEP( gauss_wts_pred gv )
   POST[ tdouble] let '(existT _ n i) := X in 
     EX x: ftype Tdouble,
-    PROP(float_near (ith_gauss_weight n i) x)
+    PROP(float_near (ith_gauss_weight i) x)
     RETURN (Vfloat x)
     SEP( gauss_wts_pred gv ).
 
@@ -377,19 +407,7 @@ entailer!.
 rewrite <- H4. clear rho' H3 H4.
 Exists x.
 entailer!!.
-destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
-destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
-red;
-set (d := half_an_ulp); hnf in d; simpl in d; subst d;
-unfold ith_gauss_weight, tuple.tnth; simpl;
-try change nmodule.Algebra.zero with 0%R;
-repeat change (ssralg.GRing.mul ?A ?B) with (A*B)%R;
-repeat change (nmodule.Algebra.opp ?A) with (- A)%R;
-repeat change (nmodule.Algebra.add ?A ?B) with (A + B)%R;
-try change (ssralg.GRing.one _) with 1%R;
-repeat change (ssralg.GRing.inv ?A) with (/A)%R;
-rewrite <- ?Rstruct.RsqrtE, <- ?Rstruct.INRE, ?Rminus_diag;
-first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+apply gauss_weights_acc.
 Qed.
 (* end details *)
 
@@ -404,8 +422,8 @@ Qed.
     SEP(data_at_ sh (tarray tdouble 2) p; gauss_pts_pred gv )
   POST[ tvoid ]  let '(existT _ n (x,y)) := X in
     EX rx: ftype Tdouble, EX ry: ftype Tdouble,
-    PROP(float_near (ith_gauss_point n x) rx;
-                 float_near (ith_gauss_point n y) ry)
+    PROP(float_near (ith_gauss_point x) rx;
+                 float_near (ith_gauss_point y) ry)
     RETURN ()
     SEP(data_at sh (tarray tdouble 2) [Vfloat rx; Vfloat ry] p; gauss_pts_pred gv).
 
@@ -419,8 +437,8 @@ Qed.
     SEP(gauss_wts_pred gv )
   POST[ tdouble ]  let '(existT _ n (x,y)) := X in
     EX x': ftype Tdouble, EX y': ftype Tdouble,
-    PROP(float_near (ith_gauss_weight n x) x';
-                 float_near (ith_gauss_weight n y) y')
+    PROP(float_near (ith_gauss_weight x) x';
+                 float_near (ith_gauss_weight y) y')
     RETURN ( Vfloat (x' * y')%F64)
     SEP(gauss_wts_pred gv).
 
@@ -455,6 +473,170 @@ Definition hughes_weight: R := 1/6.
     PROP(float_near hughes_weight w)
     RETURN ( Vfloat w )
     SEP().
+
+(* 
+
+  Lemma legendre_quadrature_error': forall (n: 'I_5) (f: R->R),
+   let GW := nth_iseq some_gauss_weights n in
+      exists ξ:R, -1 <= ξ <= 1 /\
+       ∫ f - Gauss_Legendre_quadrature n f =  
+       derive1n (2*n+2) f ξ / 
+        (factorial(2*n+2))%:R * ∫ (fun x => (horner (legendre n.+1) x)^2).
+*)
+
+Definition realfun_spec (f: R -> R) (acc: R) : funspec :=
+ WITH x: ftype Tdouble
+ PRE [ tdouble ]
+   PROP ((-1 <= FT2R x <= 1)%R)
+   PARAMS (Vfloat x)
+   SEP()
+ POST [ tdouble ]
+   EX y: ftype Tdouble,
+   PROP ((Rabs (FT2R y - f (FT2R x)) <= acc)%R)
+   RETURN (Vfloat y)
+   SEP ().
+
+Definition δ := FPCore.default_rel FPCore.Tdouble.
+Definition testfun_spec : ident * funspec := 
+ DECLARE _testfun
+  (realfun_spec (fun x => (1/2)*(1-x)*(cos x))%R (5*δ)).
+
+Definition floatfun_spec (f: ftype Tdouble -> ftype Tdouble) : funspec :=
+ WITH x: ftype Tdouble
+ PRE [ tdouble ]
+   PROP ()
+   PARAMS (Vfloat x)
+   SEP()
+ POST [ tdouble ]
+   PROP ()
+   RETURN (Vfloat (f x))
+   SEP ().
+
+(* Znth (npts*(npts-1)/2+i) gauss_wts_list *)
+
+(*
+From libValidSDP Require Import fsum_l2r binary64.
+
+Check frnd binary64.
+Check (fun x => FS_val (frnd binary64 x)).
+Lemma prec_lt_emax: forall t, Datatypes.is_true (@flocq_float.prec (fprecp t) <? femax t).
+Proof.
+intros.
+pose proof fprec_lt_femax t.
+unfold flocq_float.prec.
+unfold fprec in H.
+apply Z.ltb_lt; auto.
+Qed.
+
+Definition fspec (t: type) := @flocq_float.flocq_float (fprecp t) (femax t) (fprec_gt_one _) (prec_lt_emax t).
+
+Lemma format_FT2R: forall t  (x: ftype t), Datatypes.is_true (@flocq_float.format (fprecp t) (femax t) (FT2R x)).
+Proof.
+Admitted.  (* from LAProof.accuracy_proofs.libvalidsdp. *)
+
+Definition mkFS (x: ftype Tdouble) : float_spec.FS (fspec Tdouble)  := 
+   float_spec.Build_FS_of (format_FT2R _ x).
+
+Import finfun.
+Locate "_ ^ _".
+Check (fun n (a: R^n) => mkFS (fsum_l2r (map mkFS a))).
+About mkFS.
+(*
+Corollary fsum_l2r_reals_err' n (x : R^n) :
+  (Rabs (\sum_i x i - fsum_l2r [ffun i => frnd (x i)])
+   <= INR n * eps * (\sum_i Rabs (x i)) + (1 + INR n * eps) * INR n * eta)%Re.
+*)
+
+Lemma  fsum_l2r_reals_err' n (x : R^n) :
+  (Rabs (\sum_i x i - fsum_l2r [ffun i => frnd (x i)])
+   <= INR n * eps * (\sum_i Rabs (x i)) + (1 + INR n * eps) * INR n * eta)%Re.
+*)
+
+Definition integrate_model (n: 'I_5) (f: ftype Tdouble -> ftype Tdouble) : ftype Tdouble :=
+  F.sum (fun i: 'I_n => BMULT (gauss_weight_f i) (f (gauss_point_f i))).
+
+
+
+Definition integrate_spec_lowlevel : ident * funspec :=
+ DECLARE _integrate
+ WITH f: ftype Tdouble -> ftype Tdouble, p: val, n : 'I_5, gv: globals
+ PRE [ tptr (Tfunction [tdouble] tdouble cc_default), tint ]
+    PROP ()
+    PARAMS ( p; Vint (Int.repr (Z.of_nat n)))
+    GLOBALS (gv)
+    SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)
+ POST [ tdouble ]
+    PROP()
+    RETURN (Vfloat (integrate_model n f))
+    SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
+
+Definition fun_acc (f: ftype Tdouble -> ftype Tdouble) (g: R -> R) (b: R) :=
+  (forall x: ftype Tdouble, -1 <= FT2R x <= 1 -> Rabs (FT2R (f x) - g (FT2R x)) <= b)%R.
+
+Definition fun_acc' (f g: R -> R) (b: R) :=
+  (forall x: R, -1 <= x <= 1 -> Rabs (f x - g x) <= b)%R.
+
+
+Definition integrate_spec : ident * funspec :=
+ DECLARE _integrate
+ WITH f: ftype Tdouble -> ftype Tdouble, g : R -> R, f_acc: R, d: R, p: val, n : 'I_5, b: R, gv: globals
+ PRE [ tptr (Tfunction [tdouble] tdouble cc_default), tint ]
+    PROP (quadrature_error_bound g n b; deriv_bound g d; fun_acc f g f_acc)
+    PARAMS ( p; Vint (Int.repr (Z.of_nat n)))
+    GLOBALS (gv)
+    SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)
+ POST [ tdouble ]
+    EX y: ftype Tdouble,
+    PROP( (Rabs (FT2R y - intgal g) <= f_acc + INR n * 3 * d )%R)
+    RETURN (Vfloat y)
+    SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
+
+
+From libValidSDP Require flocq_float.
+
+Lemma prec_lt_emax (t: type) : Datatypes.is_true (@flocq_float.prec (fprecp t) <? femax t).
+Proof.
+pose proof fprec_lt_femax t.
+apply Z.ltb_lt; auto.
+Qed.
+
+Definition fspec t := @flocq_float.flocq_float (fprecp t) (femax t) (fprec_gt_one _) (prec_lt_emax t).
+
+Lemma sub_integrate: funspec_sub (snd integrate_spec_lowlevel) (snd integrate_spec).
+(* begin details: Proof. ... Qed. *)
+Proof.
+apply NDsubsume_subsume.
+split; auto.
+unfold snd.
+hnf; intros.
+split; auto. intros [[[[[[[f g] f_acc] d] p] n] b] gv] [? ?].
+simpl prop. Exists (f,p,n,gv) emp.
+normalize.
+inv H. inv H4. inv H5.
+unfold_for_go_lower; normalize. simpl; entailer!; intros.
+inv H.
+Exists (integrate_model n f).
+entailer!!.
+From libValidSDP Require binary64.
+(*
+ pose (x := float_spec.FS binary64.binary64).
+assert (x = ftype Tdouble).
+subst x. unfold binary64.binary64. simpl. unfold bsn_infnan.fis.
+unfold flocq_float.flocq_float. unfold float_spec.FS. simpl.
+Search flocq_float.format.
+Search float_spec.FS_of.
+
+unfold flocq_float.format. unfold flocq_float.generic_format_pred.
+
+ unfold float_spec.FS_of. simpl.
+ simpl.
+ simpl. simpl.
+hnf in x.
+*)
+pose proof integrate_model_err (fspec Tdouble) n.
+assert (float_spec.FS (fspec Tdouble) = ftype Tdouble).
+
+Admitted.
 
 
 (** Finally we build an Abstract Specification Interface (ASI) containing all the instantiated specs *)

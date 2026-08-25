@@ -26,4 +26,5 @@ shapefloat.v
 shape_accuracy.v
 quadrature.v
 quadrature2.v
+quadmodel_accuracy.v
 

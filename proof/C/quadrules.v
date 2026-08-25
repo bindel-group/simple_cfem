@@ -101,8 +101,10 @@ Definition __ubuf : ident := $"_ubuf".
 Definition __ur : ident := $"_ur".
 Definition __w : ident := $"_w".
 Definition __write : ident := $"_write".
+Definition _cos : ident := $"cos".
 Definition _d : ident := $"d".
 Definition _exit : ident := $"exit".
+Definition _f : ident := $"f".
 Definition _fprintf : ident := $"fprintf".
 Definition _gauss2d_npoint1d : ident := $"gauss2d_npoint1d".
 Definition _gauss2d_point : ident := $"gauss2d_point".
@@ -114,10 +116,16 @@ Definition _gauss_wts : ident := $"gauss_wts".
 Definition _hughes_point : ident := $"hughes_point".
 Definition _hughes_weight : ident := $"hughes_weight".
 Definition _i : ident := $"i".
+Definition _integrate : ident := $"integrate".
+Definition _integrate_testfun : ident := $"integrate_testfun".
 Definition _ix : ident := $"ix".
 Definition _iy : ident := $"iy".
 Definition _main : ident := $"main".
+Definition _n : ident := $"n".
 Definition _npts : ident := $"npts".
+Definition _s : ident := $"s".
+Definition _testfun : ident := $"testfun".
+Definition _x : ident := $"x".
 Definition _xi : ident := $"xi".
 Definition _t'1 : ident := 128%positive.
 Definition _t'2 : ident := 129%positive.
@@ -538,6 +546,88 @@ Definition f_hughes_weight := {|
                  tdouble)))
 |}.
 
+Definition f_integrate := {|
+  fn_return := tdouble;
+  fn_callconv := cc_default;
+  fn_params := ((_f, (tptr (Tfunction (tdouble :: nil) tdouble cc_default))) ::
+                (_n, tint) :: nil);
+  fn_vars := nil;
+  fn_temps := ((_i, tint) :: (_s, tdouble) :: (_t'3, tdouble) ::
+               (_t'2, tdouble) :: (_t'1, tdouble) :: nil);
+  fn_body :=
+(Ssequence
+  (Sset _s (Econst_float (Float.of_bits (Int64.repr 0)) tdouble))
+  (Ssequence
+    (Ssequence
+      (Sset _i (Econst_int (Int.repr 0) tint))
+      (Sloop
+        (Ssequence
+          (Sifthenelse (Ebinop Olt (Etempvar _i tint) (Etempvar _n tint)
+                         tint)
+            Sskip
+            Sbreak)
+          (Ssequence
+            (Ssequence
+              (Ssequence
+                (Scall (Some _t'1)
+                  (Evar _gauss_weight (Tfunction (tint :: tint :: nil)
+                                        tdouble cc_default))
+                  ((Etempvar _i tint) :: (Etempvar _n tint) :: nil))
+                (Scall (Some _t'2)
+                  (Evar _gauss_point (Tfunction (tint :: tint :: nil) tdouble
+                                       cc_default))
+                  ((Etempvar _i tint) :: (Etempvar _n tint) :: nil)))
+              (Scall (Some _t'3)
+                (Etempvar _f (tptr (Tfunction (tdouble :: nil) tdouble
+                                     cc_default)))
+                ((Etempvar _t'2 tdouble) :: nil)))
+            (Sset _s
+              (Ebinop Oadd (Etempvar _s tdouble)
+                (Ebinop Omul (Etempvar _t'1 tdouble) (Etempvar _t'3 tdouble)
+                  tdouble) tdouble))))
+        (Sset _i
+          (Ebinop Oadd (Etempvar _i tint) (Econst_int (Int.repr 1) tint)
+            tint))))
+    (Sreturn (Some (Etempvar _s tdouble)))))
+|}.
+
+Definition f_testfun := {|
+  fn_return := tdouble;
+  fn_callconv := cc_default;
+  fn_params := ((_x, tdouble) :: nil);
+  fn_vars := nil;
+  fn_temps := ((_t'1, tdouble) :: nil);
+  fn_body :=
+(Ssequence
+  (Scall (Some _t'1)
+    (Evar _cos (Tfunction (tdouble :: nil) tdouble cc_default))
+    ((Etempvar _x tdouble) :: nil))
+  (Sreturn (Some (Ebinop Omul
+                   (Ebinop Omul
+                     (Econst_float (Float.of_bits (Int64.repr 4602678819172646912)) tdouble)
+                     (Ebinop Osub (Econst_int (Int.repr 1) tint)
+                       (Etempvar _x tdouble) tdouble) tdouble)
+                   (Etempvar _t'1 tdouble) tdouble))))
+|}.
+
+Definition f_integrate_testfun := {|
+  fn_return := tdouble;
+  fn_callconv := cc_default;
+  fn_params := nil;
+  fn_vars := nil;
+  fn_temps := ((_t'1, tdouble) :: nil);
+  fn_body :=
+(Ssequence
+  (Scall (Some _t'1)
+    (Evar _integrate (Tfunction
+                       ((tptr (Tfunction (tdouble :: nil) tdouble cc_default)) ::
+                        tint :: nil) tdouble cc_default))
+    ((Eaddrof (Evar _testfun (Tfunction (tdouble :: nil) tdouble cc_default))
+       (tptr (Tfunction (tdouble :: nil) tdouble cc_default))) ::
+     (Econst_int (Int.repr 2) tint) :: nil))
+  (Sreturn (Some (Etempvar _t'1 tdouble))))
+|}.
+
 Definition composites : list composite_definition :=
 (Composite ___sbuf Struct
    (Member_plain __base (tptr tuchar) :: Member_plain __size tint :: nil)
@@ -829,12 +919,20 @@ Definition global_definitions : list (ident * globdef fundef type) :=
  (_gauss2d_point, Gfun(Internal f_gauss2d_point)) ::
  (_gauss2d_weight, Gfun(Internal f_gauss2d_weight)) ::
  (_hughes_point, Gfun(Internal f_hughes_point)) ::
- (_hughes_weight, Gfun(Internal f_hughes_weight)) :: nil).
+ (_hughes_weight, Gfun(Internal f_hughes_weight)) ::
+ (_cos,
+   Gfun(External (EF_external "cos"
+                   (mksignature (AST.Xfloat :: nil) AST.Xfloat cc_default))
+     (tdouble :: nil) tdouble cc_default)) ::
+ (_integrate, Gfun(Internal f_integrate)) ::
+ (_testfun, Gfun(Internal f_testfun)) ::
+ (_integrate_testfun, Gfun(Internal f_integrate_testfun)) :: nil).
 
 Definition public_idents : list ident :=
-(_hughes_weight :: _hughes_point :: _gauss2d_weight :: _gauss2d_point ::
- _gauss2d_npoint1d :: _gauss_weight :: _gauss_point :: _exit :: _fprintf ::
- ___stderrp :: ___builtin_debug :: ___builtin_fmin :: ___builtin_fmax ::
+(_integrate_testfun :: _testfun :: _integrate :: _cos :: _hughes_weight ::
+ _hughes_point :: _gauss2d_weight :: _gauss2d_point :: _gauss2d_npoint1d ::
+ _gauss_weight :: _gauss_point :: _exit :: _fprintf :: ___stderrp ::
+ ___builtin_debug :: ___builtin_fmin :: ___builtin_fmax ::
  ___builtin_fnmsub :: ___builtin_fnmadd :: ___builtin_fmsub ::
  ___builtin_fmadd :: ___builtin_clsll :: ___builtin_clsl :: ___builtin_cls ::
  ___builtin_expect :: ___builtin_unreachable :: ___builtin_va_end ::
