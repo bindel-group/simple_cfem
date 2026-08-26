@@ -16,27 +16,6 @@ Local Open Scope R_scope.
 Local Open Scope order_scope.
 Local Open Scope ring_scope.
 
-(*From Stdlib Require Import Reals Psatz.
-From Flocq Require Import Core.Raux.
-
-From libValidSDP Require Import misc fsum fsum_l2r.
-
-From mathcomp Require Import ssreflect ssrbool ssrfun ssrnat.
-From mathcomp Require Import fintype finfun ssralg bigop eqtype seq path.
-From mathcomp Require Import Rstruct.
-
-From CFEM Require Import quadrature quadrature2. Import Legendre.
-Import mathcomp.algebra.num_theory.numdomain.Num.
-
-Local Notation R := (RbaseSymbolsImpl_R__canonical__reals_Real).
-
-Open Scope R_scope.
-Open Scope ring_scope.
-
-Delimit Scope ring_scope with Ri.
-Delimit Scope R_scope with Re.
-
-*)
 Require Import Lia.
 
 From libValidSDP Require Import misc fsum fsum_l2r.
@@ -241,7 +220,7 @@ End foo.
 
 Ltac spec H3 := match type of H3 with ?A -> _ => let H := fresh in assert (H: A); [ | specialize (H3 H)] end.
 
- Lemma integrate_model_err: 
+ Lemma integrate_model_err_partial: 
      Rabs (FS_val integrate_model_f - integrate_model_r) <= integrate_model_acc. {
 Proof.
  intros.
@@ -396,6 +375,29 @@ pose proof eps_pos fs. clear - H0. Lra.lra.
 apply Rle_refl.
 }
 Qed.
+
+ Lemma integrate_model_err: 
+     Rabs (FS_val integrate_model_f - ∫ g) <= integrate_model_acc + b. {
+Proof.
+ intros.
+ replace (FS_val integrate_model_f - ∫ g) with
+    (FS_val integrate_model_f - integrate_model_r + (integrate_model_r - ∫ g))
+  by Lra.lra.
+ etransitivity; [apply Rabs_triang | ].
+ apply Rplus_le_compat.
+ apply /RleP.
+ apply integrate_model_err_partial.
+ apply quadrature_error_bound_is_bound in Hb.
+ rewrite Rabs_minus_sym.
+ replace integrate_model_r with (Gauss_Legendre_quadrature n g). 2:{
+ rewrite /Gauss_Legendre_quadrature /integrate_model_r /compute_G.
+ apply eq_big => i; auto. move => _.
+ admit.  (* likely true *)
+}
+ rewrite RabsE.
+ apply /RleP. apply Hb.
+Admitted.
+
 
 End FLOAT.
 

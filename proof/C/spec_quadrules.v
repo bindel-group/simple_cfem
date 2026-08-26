@@ -512,50 +512,8 @@ Definition floatfun_spec (f: ftype Tdouble -> ftype Tdouble) : funspec :=
    RETURN (Vfloat (f x))
    SEP ().
 
-(* Znth (npts*(npts-1)/2+i) gauss_wts_list *)
-
-(*
-From libValidSDP Require Import fsum_l2r binary64.
-
-Check frnd binary64.
-Check (fun x => FS_val (frnd binary64 x)).
-Lemma prec_lt_emax: forall t, Datatypes.is_true (@flocq_float.prec (fprecp t) <? femax t).
-Proof.
-intros.
-pose proof fprec_lt_femax t.
-unfold flocq_float.prec.
-unfold fprec in H.
-apply Z.ltb_lt; auto.
-Qed.
-
-Definition fspec (t: type) := @flocq_float.flocq_float (fprecp t) (femax t) (fprec_gt_one _) (prec_lt_emax t).
-
-Lemma format_FT2R: forall t  (x: ftype t), Datatypes.is_true (@flocq_float.format (fprecp t) (femax t) (FT2R x)).
-Proof.
-Admitted.  (* from LAProof.accuracy_proofs.libvalidsdp. *)
-
-Definition mkFS (x: ftype Tdouble) : float_spec.FS (fspec Tdouble)  := 
-   float_spec.Build_FS_of (format_FT2R _ x).
-
-Import finfun.
-Locate "_ ^ _".
-Check (fun n (a: R^n) => mkFS (fsum_l2r (map mkFS a))).
-About mkFS.
-(*
-Corollary fsum_l2r_reals_err' n (x : R^n) :
-  (Rabs (\sum_i x i - fsum_l2r [ffun i => frnd (x i)])
-   <= INR n * eps * (\sum_i Rabs (x i)) + (1 + INR n * eps) * INR n * eta)%Re.
-*)
-
-Lemma  fsum_l2r_reals_err' n (x : R^n) :
-  (Rabs (\sum_i x i - fsum_l2r [ffun i => frnd (x i)])
-   <= INR n * eps * (\sum_i Rabs (x i)) + (1 + INR n * eps) * INR n * eta)%Re.
-*)
-
 Definition integrate_model (n: 'I_5) (f: ftype Tdouble -> ftype Tdouble) : ftype Tdouble :=
   F.sum (fun i: 'I_n => BMULT (gauss_weight_f i) (f (gauss_point_f i))).
-
-
 
 Definition integrate_spec_lowlevel : ident * funspec :=
  DECLARE _integrate
@@ -576,31 +534,248 @@ Definition fun_acc (f: ftype Tdouble -> ftype Tdouble) (g: R -> R) (b: R) :=
 Definition fun_acc' (f g: R -> R) (b: R) :=
   (forall x: R, -1 <= x <= 1 -> Rabs (f x - g x) <= b)%R.
 
+Section foo.
+Import Init.Datatypes.
+From LAProof.accuracy_proofs Require Import preamble.
+Import float_spec.
+Definition fbound (g: R -> R) (fb: R) := 
+  (forall x : R, is_true (-1 <= x <= 1)%O -> is_true (Rabs (g x) <= fb)%O).
+End foo.
+
+From LAProof.accuracy_proofs Require  libvalidsdp.
+Definition fs := @libvalidsdp.fspec Tdouble.
 
 Definition integrate_spec : ident * funspec :=
  DECLARE _integrate
- WITH f: ftype Tdouble -> ftype Tdouble, g : R -> R, f_acc: R, d: R, p: val, n : 'I_5, b: R, gv: globals
+ WITH f: ftype Tdouble -> ftype Tdouble, g : R -> R, fb: R, f_acc: R, d: R, p: val, n : 'I_5, b: R, gv: globals
  PRE [ tptr (Tfunction [tdouble] tdouble cc_default), tint ]
-    PROP (quadrature_error_bound g n b; deriv_bound g d; fun_acc f g f_acc)
+    PROP (quadrature_error_bound g n b; fbound g fb ; deriv_bound g d; fun_acc f g f_acc)
     PARAMS ( p; Vint (Int.repr (Z.of_nat n)))
     GLOBALS (gv)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)
  POST [ tdouble ]
     EX y: ftype Tdouble,
-    PROP( (Rabs (FT2R y - intgal g) <= f_acc + INR n * 3 * d )%R)
+    PROP( (Rabs (FT2R y - intgal g) <= integrate_model_acc fs n fb d f_acc + b)%R)
     RETURN (Vfloat y)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
 
+Module AdaptLibValidSDP.
+Import Init.Datatypes.
+From LAProof.accuracy_proofs Require Import preamble libvalidsdp.
+From libValidSDP Require  flocq_float float_spec float_infnan_spec flocq_float binary_infnan binary64.
+Import float_spec.
 
-From libValidSDP Require flocq_float.
+Notation F' := (@libvalidsdp.F' _ Tdouble).
+Notation F := (float_spec.FS fs).
 
-Lemma prec_lt_emax (t: type) : Datatypes.is_true (@flocq_float.prec (fprecp t) <? femax t).
+Definition fsum_l2r' [n]  (x : R^n) : F :=
+  fsum_l2r.fsum_l2r_rec (float_spec.frnd fs R0) [ffun i => frnd fs (x i)].
+
+Definition fsum_l2r [n] (x : F'^n) : F' :=    fsum_l2r_rec (Zconst _ 0) x.
+
+Lemma frnd_FT2R:  forall (x: F'), frnd fs (FT2R x) = mkFS x.
 Proof.
-pose proof fprec_lt_femax t.
-apply Z.ltb_lt; auto.
+intros.
+rewrite -FS_val_mkFS frnd_F //.
 Qed.
 
-Definition fspec t := @flocq_float.flocq_float (fprecp t) (femax t) (fprec_gt_one _) (prec_lt_emax t).
+Lemma LVSDP_fsum_eq:
+ forall [k] (a: F'^k) 
+   (FIN: Binary.is_finite (fsum_l2r a)),
+   mkFS (fsum_l2r a) = fsum_l2r'  [ffun i => FS_val (mkFS (a i))].
+Proof.
+rewrite /fsum_l2r /fsum_l2r'.
+set c := Zconst Tdouble 0.
+change R0 with (FT2R c).
+clearbody c.
+move => k. move : c.
+induction k; intros; auto.
+-
+rewrite /fsum_l2r.fsum_l2r_rec /fsum_l2r_rec frnd_FT2R //.
+-
+with_strategy opaque [frnd] simpl.
+set c1 := BPLUS c _.
+specialize (IHk c1 [ffun i => a (rshift 1 i)]).
+set u := [ffun i => fun_of_fin a (lift ord0 i)].
+replace u
+  with [ffun i => fun_of_fin a (rshift 1 i)].
+2: apply eq_dffun; simpl; intro; rewrite rshift1 //.
+rewrite {}IHk.
+2:{
+red. rewrite -FIN. f_equal.
+with_strategy opaque [frnd] simpl.
+f_equal.
+apply eq_dffun => i. rewrite rshift1 //.
+}
+with_strategy opaque [frnd] simpl.
+f_equal.
++
+subst c1.
+apply FS_val_ext.
+rewrite ffunE.
+rewrite frnd_FT2R.
+rewrite FS_val_mkFS.
+rewrite -FS_val_fplus'.
+2:{
+apply fsum_l2r_rec_finite_e in FIN.
+destruct FIN as [? [? ?]]. simpl in *.
+destruct (fsum_l2r_rec_finite_e1 _ _ _ H1); auto.
+}
+rewrite /fplus ffunE frnd_FT2R frnd_FT2R //.
++
+apply eq_dffun. simpl; intro i.
+rewrite !ffunE.
+rewrite rshift1; auto.
+Qed.
+
+Definition FofR (x: R) : ftype Tdouble := @binary_infnan.firnd _ _ prec_lt_emax x.
+
+Definition foo (f: F' -> F') (x: F) : F := mkFS (f (FofR x)).
+
+Lemma fsum_l2r_0lemma: forall [n] (a: FS fs ^ n), 
+   fsum_l2r.fsum_l2r a = fsum_l2r.fsum_l2r_rec (F0 fs) a.
+Proof.
+intros.
+pose b := [ffun i : 'I_(1+n)=> match split i with inl _ => F0 fs | inr j => a j end : F].
+simpl in b.
+transitivity (fsum_l2r.fsum_l2r b).
+rewrite /fsum_l2r.fsum_l2r.
+destruct n. simpl. subst b. rewrite ffunE. rewrite /split /ord0. destruct ltnP; auto. simpl in i. lia.
+-
+simpl.
+rewrite ffunE.
+rewrite /split /=. destruct ltnP; try lia.
+rewrite /b ?ffunE.
+rewrite /split /=.
+rewrite /bump /=.  destruct ltnP; try lia.
+f_equal.
+rewrite Rplus_0_l.
+rewrite flocq_float.frnd_F. f_equal. apply ord_inj; auto.
+apply eq_dffun => j. rewrite ?ffunE.
+simpl. rewrite /bump /=.
+ destruct ltnP; try lia.
+f_equal.
+apply ord_inj; auto.
+-
+rewrite /fsum_l2r.fsum_l2r.
+simpl.
+rewrite {}/b.
+rewrite ffunE.
+rewrite {1}/split /=. destruct ltnP; try lia.
+f_equal.
+clear i.
+apply ffunP => i.
+rewrite ?ffunE /=.
+rewrite /lift /split /= /bump/=. destruct ltnP; try lia.
+f_equal.
+apply ord_inj; simpl. simpl in *.
+set j := nat_of_ord i. clearbody j. lia.
+Qed.
+
+
+Lemma FofR_FT2R: forall x, Binary.is_finite x -> FofR (FT2R x) = x.
+Admitted.
+
+Lemma FT2R_FofR_FSval: forall x :F, FT2R (FofR (FS_val x)) = FS_val x.
+Admitted.
+
+Lemma fmult_mkFS' :
+forall {NAN : FPCore.Nans} (x y : ftype Tdouble),
+Binary.is_finite (BMULT x y) -> 
+    (fmult (mkFS x) (mkFS y)) =  mkFS  (BMULT x y).
+Proof.
+intros.
+apply FS_val_ext.
+rewrite FS_val_fmult' //.
+Qed.
+
+Lemma fplus_mkFS' :
+forall {NAN : FPCore.Nans} (x y : ftype Tdouble),
+Binary.is_finite (BPLUS x y) -> 
+    (fplus (mkFS x) (mkFS y)) =  mkFS  (BPLUS x y).
+Proof.
+intros.
+apply FS_val_ext.
+rewrite FS_val_fplus' //.
+Qed.
+
+
+Lemma integrate_model_equiv:
+ forall (n: 'I_5) (f: F' -> F'),
+    Binary.is_finite (integrate_model n f) ->
+  mkFS (integrate_model n f) = 
+  integrate_model_f fs n (mkFS oo @gauss_point_f n) (mkFS oo @gauss_weight_f n) 
+       (mkFS oo f oo FofR).
+Proof.
+intros.
+assert (integrate_model n f = fsum_l2r [ffun i: 'I_n => (gauss_weight_f i * f (gauss_point_f i))%F64]).
+admit.  (* should be straightforward. *)
+rewrite H0 in H|-*. clear H0.
+rewrite /integrate_model_f /fsum_l2r in H|-*.
+rewrite fsum_l2r_0lemma.
+assert (F0 fs = mkFS (Zconst Tdouble 0)) by (apply FS_val_ext; auto).
+rewrite {}H0.
+set c := Zconst _ 0 in H|-*. clearbody c.
+match goal with |- _ = _ _ ?A => 
+  replace  A  with [ffun i: 'I_n => fmult (mkFS (gauss_weight_f i)) (mkFS (f (gauss_point_f i)))] 
+end.
+2:{ apply eq_dffun => i; simpl; rewrite ?ffunE. f_equal. f_equal. f_equal. f_equal.
+ symmetry; apply FofR_FT2R.
+ admit.
+}
+set W := @gauss_weight_f n in H|-*; clearbody W.
+set P := @gauss_point_f n in H|-*; clearbody P.
+revert c W P H.
+destruct n as [n Hn].
+ with_strategy opaque [fmult] simpl in *.
+clear Hn.
+induction n; intros; auto.
+with_strategy opaque [frnd] simpl.
+set c1 := BPLUS c _.
+specialize (IHn c1).
+rewrite ?ffunE.
+specialize (IHn (fun i => W (lift ord0 i)) (fun i => P (lift ord0 i))).
+set u := [ffun _ => _].
+replace u with  [ffun i => ((fun i0 : 'I_n => W (lift ord0 i0)) i *
+                   f ((fun i0 : 'I_n => P (lift ord0 i0)) i))%F64].
+2: apply eq_dffun => i; rewrite ?ffunE //.
+clear u.
+rewrite IHn.
+-
+f_equal.
++
+rewrite /c1 ?ffunE fmult_mkFS' ?fplus_mkFS' //.
+admit. (* easy enough *)
+admit. (* easy enough *)
++
+apply eq_dffun => i; rewrite ?ffunE //.
+-
+admit. (* easy enough *)
+Admitted.
+
+Lemma gauss_point_f_bound [n: 'I_5]: 
+  (forall i : 'I_(nat_of_ord n),
+   Rabs (FS_val ((mkFS oo gauss_point_f (n:=n)) i)) <= 1) .
+Admitted.
+
+Lemma gauss_point_f_acc [n: 'I_5]:
+  (forall i : 'I_(nat_of_ord n),
+   is_true
+     (Rabs
+        (FS_val ((mkFS oo gauss_point_f (n:=n)) i) -
+         bounded_val (gauss_pt n i))%Ri <=
+      eps fs)%O).
+Admitted.
+
+Lemma gauss_weight_f_bound [n: 'I_5]:
+  (forall i : 'I_(nat_of_ord n),
+   is_true
+     (Rabs
+        (FS_val ((mkFS oo gauss_weight_f (n:=n)) i) -
+         bounded_val (gauss_wt n i))%Ri <=
+      eps fs)%O).
+Admitted.
+
 
 Lemma sub_integrate: funspec_sub (snd integrate_spec_lowlevel) (snd integrate_spec).
 (* begin details: Proof. ... Qed. *)
@@ -609,7 +784,7 @@ apply NDsubsume_subsume.
 split; auto.
 unfold snd.
 hnf; intros.
-split; auto. intros [[[[[[[f g] f_acc] d] p] n] b] gv] [? ?].
+split; auto. intros [[[[[[[[f g] fb] f_acc] d] p] n] b] gv] [? ?].
 simpl prop. Exists (f,p,n,gv) emp.
 normalize.
 inv H. inv H4. inv H5.
@@ -617,27 +792,28 @@ unfold_for_go_lower; normalize. simpl; entailer!; intros.
 inv H.
 Exists (integrate_model n f).
 entailer!!.
-From libValidSDP Require binary64.
-(*
- pose (x := float_spec.FS binary64.binary64).
-assert (x = ftype Tdouble).
-subst x. unfold binary64.binary64. simpl. unfold bsn_infnan.fis.
-unfold flocq_float.flocq_float. unfold float_spec.FS. simpl.
-Search flocq_float.format.
-Search float_spec.FS_of.
-
-unfold flocq_float.format. unfold flocq_float.generic_format_pred.
-
- unfold float_spec.FS_of. simpl.
- simpl.
- simpl. simpl.
-hnf in x.
-*)
-pose proof integrate_model_err (fspec Tdouble) n.
-assert (float_spec.FS (fspec Tdouble) = ftype Tdouble).
-
+clear H9 H8 H7 x1 Pp p H3 H2 gv H6 g0.
+rewrite -FS_val_mkFS.
+rewrite integrate_model_equiv.
+-
+assert (fun_acc': forall x : F,
+   is_true (-1 <= FS_val x <= 1)%O ->
+   Rabs
+     (FS_val ((fun x0 : F => (mkFS oo f oo FofR) (FS_val x0)) x) -
+      g (FS_val x))%Ri <=
+   f_acc). {
+ intros. simpl.
+ specialize (H5 (FofR (FS_val x))). rewrite FT2R_FofR_FSval in H5. apply H5.
+ clear - H. admit. (* easy enough *)
+}
+apply (integrate_model_err fs n _ _
+  (@gauss_point_f_bound n)
+ (@gauss_point_f_acc n)
+  (@gauss_weight_f_bound n)
+  fb g H1 b H0 d H4 (mkFS oo f oo FofR) f_acc fun_acc').
+-
+admit.
 Admitted.
-
 
 (** Finally we build an Abstract Specification Interface (ASI) containing all the instantiated specs *)
 Definition quadrules_ASI: funspecs :=
