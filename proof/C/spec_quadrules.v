@@ -257,7 +257,7 @@ Definition gauss2d_npoint1d_spec : ident * funspec :=
   approximations of the real-valued Gauss points and weights, so 
   we import all the appropriate stuff now. *)
 
-From CFEM Require Import quadrature quadrature2 quadmodel_accuracy.  Import Legendre.
+From CFEM Require Import quadrature quadrature2 quadmodel_accuracy.  Import Nearest. Import Legendre.
 Require Import Interval.Tactic.
 From mathcomp Require Import Rstruct.
 From Stdlib Require Import Reals.
@@ -529,7 +529,8 @@ Definition integrate_spec_lowlevel : ident * funspec :=
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
 
 Definition fun_acc (f: ftype Tdouble -> ftype Tdouble) (g: R -> R) (b: R) :=
-  (forall x: ftype Tdouble, -1 <= FT2R x <= 1 -> Rabs (FT2R (f x) - g (FT2R x)) <= b)%R.
+  (forall x: ftype Tdouble, Binary.is_finite x = true /\  -1 <= FT2R x <= 1 -> 
+                   Binary.is_finite (f x) = true /\ Rabs (FT2R (f x) - g (FT2R x)) <= b)%R.
 
 Definition fun_acc' (f g: R -> R) (b: R) :=
   (forall x: R, -1 <= x <= 1 -> Rabs (f x - g x) <= b)%R.
@@ -542,240 +543,262 @@ Definition fbound (g: R -> R) (fb: R) :=
   (forall x : R, is_true (-1 <= x <= 1)%O -> is_true (Rabs (g x) <= fb)%O).
 End foo.
 
-From LAProof.accuracy_proofs Require  libvalidsdp.
-Definition fs := @libvalidsdp.fspec Tdouble.
+From libValidSDP Require binary_infnan.
+
+Definition LVSDP_NAN : binary_infnan.Nans.
+destruct nans.
+constructor.
+apply conv_nan.
+apply plus_nan.
+apply mult_nan.
+apply div_nan.
+apply abs_nan.
+apply opp_nan.
+apply sqrt_nan.
+apply fma_nan.
+Defined.
+
+Import float_infnan_spec.
+
+Definition fis : Float_infnan_spec := @libValidSDP.binary_infnan.binary_infnan LVSDP_NAN 
+   (fprecp Tdouble) (femax Tdouble)
+       (fprec_gt_one Tdouble) (eq_refl _).
+
+Definition fs := float_infnan_spec.fis fis.
 
 Definition integrate_spec : ident * funspec :=
  DECLARE _integrate
  WITH f: ftype Tdouble -> ftype Tdouble, g : R -> R, fb: R, f_acc: R, d: R, p: val, n : 'I_5, b: R, gv: globals
  PRE [ tptr (Tfunction [tdouble] tdouble cc_default), tint ]
-    PROP (quadrature_error_bound g n b; fbound g fb ; deriv_bound g d; fun_acc f g f_acc)
+    PROP (quadrature_error_bound g n b; 
+                  fbound g fb ; 
+                  deriv_bound g d; 
+                  fun_acc f g f_acc;
+                  parameter_limits fis  n  fb f_acc)
     PARAMS ( p; Vint (Int.repr (Z.of_nat n)))
     GLOBALS (gv)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)
  POST [ tdouble ]
     EX y: ftype Tdouble,
-    PROP( (Rabs (FT2R y - intgal g) <= integrate_model_acc fs n fb d f_acc + b)%R)
+    PROP( (Rabs (FT2R y - intgal g) <= integrate_model_acc fis n fb d f_acc + b)%R)
     RETURN (Vfloat y)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
 
-Module AdaptLibValidSDP.
+(* Module AdaptLibValidSDP. *)
 Import Init.Datatypes.
 From LAProof.accuracy_proofs Require Import preamble libvalidsdp.
 From libValidSDP Require  flocq_float float_spec float_infnan_spec flocq_float binary_infnan binary64.
 Import float_spec.
 
 Notation F' := (@libvalidsdp.F' _ Tdouble).
-Notation F := (float_spec.FS fs).
+Notation F := (float_infnan_spec.FIS fis).
 
-Definition fsum_l2r' [n]  (x : R^n) : F :=
-  fsum_l2r.fsum_l2r_rec (float_spec.frnd fs R0) [ffun i => frnd fs (x i)].
+Local Remark F'_is_F:  F' = F.
+Proof. reflexivity. Qed.
 
-Definition fsum_l2r [n] (x : F'^n) : F' :=    fsum_l2r_rec (Zconst _ 0) x.
-
-Lemma frnd_FT2R:  forall (x: F'), frnd fs (FT2R x) = mkFS x.
-Proof.
-intros.
-rewrite -FS_val_mkFS frnd_F //.
-Qed.
-
-Lemma LVSDP_fsum_eq:
- forall [k] (a: F'^k) 
-   (FIN: Binary.is_finite (fsum_l2r a)),
-   mkFS (fsum_l2r a) = fsum_l2r'  [ffun i => FS_val (mkFS (a i))].
-Proof.
-rewrite /fsum_l2r /fsum_l2r'.
-set c := Zconst Tdouble 0.
-change R0 with (FT2R c).
-clearbody c.
-move => k. move : c.
-induction k; intros; auto.
--
-rewrite /fsum_l2r.fsum_l2r_rec /fsum_l2r_rec frnd_FT2R //.
--
-with_strategy opaque [frnd] simpl.
-set c1 := BPLUS c _.
-specialize (IHk c1 [ffun i => a (rshift 1 i)]).
-set u := [ffun i => fun_of_fin a (lift ord0 i)].
-replace u
-  with [ffun i => fun_of_fin a (rshift 1 i)].
-2: apply eq_dffun; simpl; intro; rewrite rshift1 //.
-rewrite {}IHk.
-2:{
-red. rewrite -FIN. f_equal.
-with_strategy opaque [frnd] simpl.
-f_equal.
-apply eq_dffun => i. rewrite rshift1 //.
-}
-with_strategy opaque [frnd] simpl.
-f_equal.
-+
-subst c1.
-apply FS_val_ext.
-rewrite ffunE.
-rewrite frnd_FT2R.
-rewrite FS_val_mkFS.
-rewrite -FS_val_fplus'.
-2:{
-apply fsum_l2r_rec_finite_e in FIN.
-destruct FIN as [? [? ?]]. simpl in *.
-destruct (fsum_l2r_rec_finite_e1 _ _ _ H1); auto.
-}
-rewrite /fplus ffunE frnd_FT2R frnd_FT2R //.
-+
-apply eq_dffun. simpl; intro i.
-rewrite !ffunE.
-rewrite rshift1; auto.
-Qed.
-
-Definition FofR (x: R) : ftype Tdouble := @binary_infnan.firnd _ _ prec_lt_emax x.
-
-Definition foo (f: F' -> F') (x: F) : F := mkFS (f (FofR x)).
-
-Lemma fsum_l2r_0lemma: forall [n] (a: FS fs ^ n), 
-   fsum_l2r.fsum_l2r a = fsum_l2r.fsum_l2r_rec (F0 fs) a.
-Proof.
-intros.
-pose b := [ffun i : 'I_(1+n)=> match split i with inl _ => F0 fs | inr j => a j end : F].
-simpl in b.
-transitivity (fsum_l2r.fsum_l2r b).
-rewrite /fsum_l2r.fsum_l2r.
-destruct n. simpl. subst b. rewrite ffunE. rewrite /split /ord0. destruct ltnP; auto. simpl in i. lia.
--
-simpl.
-rewrite ffunE.
-rewrite /split /=. destruct ltnP; try lia.
-rewrite /b ?ffunE.
-rewrite /split /=.
-rewrite /bump /=.  destruct ltnP; try lia.
-f_equal.
-rewrite Rplus_0_l.
-rewrite flocq_float.frnd_F. f_equal. apply ord_inj; auto.
-apply eq_dffun => j. rewrite ?ffunE.
-simpl. rewrite /bump /=.
- destruct ltnP; try lia.
-f_equal.
-apply ord_inj; auto.
--
-rewrite /fsum_l2r.fsum_l2r.
-simpl.
-rewrite {}/b.
-rewrite ffunE.
-rewrite {1}/split /=. destruct ltnP; try lia.
-f_equal.
-clear i.
-apply ffunP => i.
-rewrite ?ffunE /=.
-rewrite /lift /split /= /bump/=. destruct ltnP; try lia.
-f_equal.
-apply ord_inj; simpl. simpl in *.
-set j := nat_of_ord i. clearbody j. lia.
-Qed.
-
-
-Lemma FofR_FT2R: forall x, Binary.is_finite x -> FofR (FT2R x) = x.
-Admitted.
-
-Lemma FT2R_FofR_FSval: forall x :F, FT2R (FofR (FS_val x)) = FS_val x.
-Admitted.
-
-Lemma fmult_mkFS' :
-forall {NAN : FPCore.Nans} (x y : ftype Tdouble),
-Binary.is_finite (BMULT x y) -> 
-    (fmult (mkFS x) (mkFS y)) =  mkFS  (BMULT x y).
-Proof.
-intros.
-apply FS_val_ext.
-rewrite FS_val_fmult' //.
-Qed.
-
-Lemma fplus_mkFS' :
-forall {NAN : FPCore.Nans} (x y : ftype Tdouble),
-Binary.is_finite (BPLUS x y) -> 
-    (fplus (mkFS x) (mkFS y)) =  mkFS  (BPLUS x y).
-Proof.
-intros.
-apply FS_val_ext.
-rewrite FS_val_fplus' //.
-Qed.
-
-
-Lemma integrate_model_equiv:
- forall (n: 'I_5) (f: F' -> F'),
-    Binary.is_finite (integrate_model n f) ->
-  mkFS (integrate_model n f) = 
-  integrate_model_f fs n (mkFS oo @gauss_point_f n) (mkFS oo @gauss_weight_f n) 
-       (mkFS oo f oo FofR).
-Proof.
-intros.
-assert (integrate_model n f = fsum_l2r [ffun i: 'I_n => (gauss_weight_f i * f (gauss_point_f i))%F64]).
-admit.  (* should be straightforward. *)
-rewrite H0 in H|-*. clear H0.
-rewrite /integrate_model_f /fsum_l2r in H|-*.
-rewrite fsum_l2r_0lemma.
-assert (F0 fs = mkFS (Zconst Tdouble 0)) by (apply FS_val_ext; auto).
-rewrite {}H0.
-set c := Zconst _ 0 in H|-*. clearbody c.
-match goal with |- _ = _ _ ?A => 
-  replace  A  with [ffun i: 'I_n => fmult (mkFS (gauss_weight_f i)) (mkFS (f (gauss_point_f i)))] 
-end.
-2:{ apply eq_dffun => i; simpl; rewrite ?ffunE. f_equal. f_equal. f_equal. f_equal.
- symmetry; apply FofR_FT2R.
- admit.
-}
-set W := @gauss_weight_f n in H|-*; clearbody W.
-set P := @gauss_point_f n in H|-*; clearbody P.
-revert c W P H.
-destruct n as [n Hn].
- with_strategy opaque [fmult] simpl in *.
-clear Hn.
-induction n; intros; auto.
-with_strategy opaque [frnd] simpl.
-set c1 := BPLUS c _.
-specialize (IHn c1).
-rewrite ?ffunE.
-specialize (IHn (fun i => W (lift ord0 i)) (fun i => P (lift ord0 i))).
-set u := [ffun _ => _].
-replace u with  [ffun i => ((fun i0 : 'I_n => W (lift ord0 i0)) i *
-                   f ((fun i0 : 'I_n => P (lift ord0 i0)) i))%F64].
-2: apply eq_dffun => i; rewrite ?ffunE //.
-clear u.
-rewrite IHn.
--
-f_equal.
-+
-rewrite /c1 ?ffunE fmult_mkFS' ?fplus_mkFS' //.
-admit. (* easy enough *)
-admit. (* easy enough *)
-+
-apply eq_dffun => i; rewrite ?ffunE //.
--
-admit. (* easy enough *)
-Admitted.
+Local Remark F_is_Tdouble: F' = ftype Tdouble.
+Proof. reflexivity. Qed.
 
 Lemma gauss_point_f_bound [n: 'I_5]: 
-  (forall i : 'I_(nat_of_ord n),
-   Rabs (FS_val ((mkFS oo gauss_point_f (n:=n)) i)) <= 1) .
-Admitted.
+  (forall i : 'I_n, Rabs (FS_val (@FIS2FS fis (gauss_point_f i))) <= 1).
+Proof.
+revert n.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; interval.
+Qed.
 
 Lemma gauss_point_f_acc [n: 'I_5]:
-  (forall i : 'I_(nat_of_ord n),
-   is_true
-     (Rabs
-        (FS_val ((mkFS oo gauss_point_f (n:=n)) i) -
-         bounded_val (gauss_pt n i))%Ri <=
-      eps fs)%O).
+  (forall i : 'I_n,
+   @float_infnan_spec.finite fis (gauss_point_f i) /\
+   (Rabs (FS_val (@FIS2FS fis (gauss_point_f i)) - bounded_val (gauss_pt n i))%Ri <= eps fis)%O).
+Proof.
+intros.
+pose proof gauss_points_acc n i.
+red in H.
+assert (eps fs = half_an_ulp).
+simpl. unfold flocq_float.eps, half_an_ulp, FPCore.default_rel; simpl; lra.
+rewrite H0; clear H0.
+split.
+-
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; auto.
+-
+change @ith_gauss_point with @quadrature2.gauss_pt in H.
+unfold half_an_ulp, FPCore.default_rel in *; simpl in *.
+pose proof gauss_point_f_bound i.
+change (FS_val (@FIS2FS fis (gauss_point_f i))) with (FT2R (gauss_point_f i)) in H0.
+change (Binary.B2R _ _ (gauss_point_f i)) with (FT2R (gauss_point_f i)).
+set x := (FT2R (gauss_point_f i)) in H,H0|-*.
+clearbody x. 
+set (y := quadrature2.gauss_pt n i) in H|-*.
+clearbody y.
+prepare_for_interval.
+simpl in *.
+change (Rplus x (Ropp y)) with (Rminus x y).
+etransitivity. apply H.
+clear H.
+set (z := (/2 * _)).
+assert (0 <= z) by (unfold z; lra).
+clearbody z.
+transitivity (1 * z); [ | lra].
+apply Rmult_le_compat_r; auto.
+Qed.
+
+
+Lemma gauss_weight_f_acc [n: 'I_5]:
+  (forall i : 'I_n,
+   @float_infnan_spec.finite fis (gauss_weight_f i) /\
+   (Rabs (FS_val (@FIS2FS fis (gauss_weight_f i)) - bounded_val (gauss_wt n i))%Ri <= eps fis)%O).
+Proof.
+intros.
+pose proof gauss_weights_acc n i.
+red in H.
+assert (eps fs = half_an_ulp).
+simpl. unfold flocq_float.eps, half_an_ulp, FPCore.default_rel; simpl; lra.
+rewrite H0; clear H0.
+split.
+-
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; auto.
+-
+change @ith_gauss_weight with @quadrature2.gauss_wt in H.
+unfold half_an_ulp, FPCore.default_rel in *; simpl in *.
+assert ((n>1)%nat -> (0 <= FT2R (gauss_weight_f i) <= 1)%R). {
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+unfold gauss_weight_f; simpl nat_of_ord;
+intro; try discriminate;
+set z := (Znth _ _); hnf in z; subst z;
+compute; lra.
+}
+destruct n as [n Hn].
+destruct n as [ | [ | n]].
++ (* n=0 *)
+simpl in i; destruct i; lia.
++ (* n=1 *)
+clear.
+simpl in i.
+rewrite ord1. clear i.
+unfold gauss_weight_f, quadrature2.gauss_wt.
+simpl.
+unfold reverse_coercion; simpl.
+unfold tuple.tnth, tuple.cons_tuple; simpl.
+prepare_for_interval.
+transitivity 0; simpl; try lra.
+replace (Defs.F2R _) with 2.
+replace (_ + _) with 0 by lra.
+rewrite Rabs_R0. lra.
+compute; lra.
++
+specialize (H0 (eq_refl _)).
+change (Binary.B2R _ _ (gauss_weight_f i)) with (FT2R (gauss_weight_f i)).
+set x := (FT2R (gauss_weight_f i)) in H,H0|-*.
+clearbody x. 
+set (y := quadrature2.gauss_wt _ i) in H|-*.
+clearbody y.
+prepare_for_interval.
+simpl in *.
+change (Rplus x (Ropp y)) with (Rminus x y).
+etransitivity. apply H.
+clear H.
+set (z := (/2 * _)).
+assert (0 <= z) by (unfold z; lra).
+clearbody z.
+transitivity (1 * z); [ | lra].
+apply Rmult_le_compat_r; auto.
+apply Rabs_le.
+lra.
+Qed.
+
+
+Lemma fisum_l2r_rec_congr: forall [n] (c c': ftype Tdouble) (a a': F^n),
+ FT2R c = FT2R c' -> 
+  (forall i, FT2R (a i) = FT2R (a' i)) ->
+  FT2R (@fisum_l2r_rec fis _ c a) = FT2R (@fisum_l2r_rec fis n c' a').
 Admitted.
 
-Lemma gauss_weight_f_bound [n: 'I_5]:
-  (forall i : 'I_(nat_of_ord n),
-   is_true
-     (Rabs
-        (FS_val ((mkFS oo gauss_weight_f (n:=n)) i) -
-         bounded_val (gauss_wt n i))%Ri <=
-      eps fs)%O).
+Lemma integrate_model_equiv:
+  forall (n: 'I_5) (f: ftype Tdouble -> ftype Tdouble),
+  FT2R (integrate_model n f) =
+  FT2R (integrate_model_f fis n (@gauss_point_f n) (@gauss_weight_f n) f).
+Proof.
+intros.
+rewrite /integrate_model /integrate_model_f.
+rewrite F.sum_sumF.
+replace (@fimult fis) with (@BMULT _ Tdouble).
+2:{
+extensionality x y.
+unfold fimult; simpl; unfold binary_infnan.fimult; simpl.
+unfold BMULT, BINOP; simpl.
+f_equal.
+apply ProofIrrelevance.proof_irrelevance.
+}
+set g := fun _ => _.
+clearbody g. clear f.
+unfold fisum_l2r.
+destruct n as [n Hn].
+simpl in *.
+destruct n; [ reflexivity | ].
+rewrite ffunE.
+transitivity 
+(FT2R
+  (fisum_l2r_rec fis common.neg_zero [ffun i => g i])).
+2:{ 
+simpl.
+rewrite ffunE. 
+set a := (finfun.body _).
+clearbody a. simpl in a.
+apply fisum_l2r_rec_congr; auto.
+destruct (g ord0); try destruct s; try reflexivity.
+}
+f_equal.
+unfold sum_model.sumF.
+replace [ffun i => g i] with [ffun i : 'I_n.+1 => nth (g ord0) (map g (ord_enum n.+1)) (nat_of_ord i)].
+2:{
+apply eq_dffun => i.
+rewrite (nth_map ord0).
+rewrite nth_ord_enum'; auto.
+rewrite size_ord_enum. destruct i;  simpl in *; lia.
+}
+set u := map _ _.
+assert (size u = n.+1). unfold u. rewrite size_map. apply size_ord_enum.
+clearbody u.
+set c := (g ord0).
+clearbody c. clear g.
+clear Hn.
+set d := common.neg_zero. clearbody d.
+revert u H d; induction (n.+1); simpl; intros; auto.
+destruct u; try discriminate. reflexivity.
+destruct u; try discriminate.
+simpl.
+simpl in H. inversion H.
+rewrite (IHn0 u H1).
+rewrite ffunE.
+simpl nth.
+rewrite H1.
+set v := [ffun i => fun_of_fin [ffun i0 => nth c (f :: u) (nat_of_ord i0)]  (lift ord0 i)].
+set v' :=  [ffun i => nth c u (nat_of_ord i)] .
+replace v with v'.
+2:{
+simpl in v, v'.
+subst v v'.
+apply eq_dffun => j. rewrite ffunE. simpl. f_equal.
+}
+f_equal.
+clear.
+unfold Basics.flip, BPLUS, BINOP, binary_infnan.fiplus.
+admit. (* ugh *)
 Admitted.
-
 
 Lemma sub_integrate: funspec_sub (snd integrate_spec_lowlevel) (snd integrate_spec).
 (* begin details: Proof. ... Qed. *)
@@ -791,29 +814,28 @@ inv H. inv H4. inv H5.
 unfold_for_go_lower; normalize. simpl; entailer!; intros.
 inv H.
 Exists (integrate_model n f).
-entailer!!.
-clear H9 H8 H7 x1 Pp p H3 H2 gv H6 g0.
-rewrite -FS_val_mkFS.
 rewrite integrate_model_equiv.
+entailer!!.
+clear H9 H8 H7 x1 Pp p H3 H2 gv H7 g0.
+rewrite -FS_val_mkFS.
 -
-assert (fun_acc': forall x : F,
-   is_true (-1 <= FS_val x <= 1)%O ->
+assert (fun_acc':  forall x : binary_infnan.FI,
+   Binary.is_finite x /\ (-1 <= Binary.B2R binary_infnan.prec 1024 x <= 1)%O ->
+   Binary.is_finite (f x) /\
    Rabs
-     (FS_val ((fun x0 : F => (mkFS oo f oo FofR) (FS_val x0)) x) -
-      g (FS_val x))%Ri <=
-   f_acc). {
- intros. simpl.
- specialize (H5 (FofR (FS_val x))). rewrite FT2R_FofR_FSval in H5. apply H5.
- clear - H. admit. (* easy enough *)
+     (Binary.B2R binary_infnan.prec 1024 (f x) -
+      g (Binary.B2R binary_infnan.prec 1024 x))%Ri <=
+   f_acc).  {
+ intros. simpl. apply (H5 x). destruct H; split; auto.
+ apply /RrangeP. apply H2.
 }
-apply (integrate_model_err fs n _ _
-  (@gauss_point_f_bound n)
- (@gauss_point_f_acc n)
-  (@gauss_weight_f_bound n)
-  fb g H1 b H0 d H4 (mkFS oo f oo FofR) f_acc fun_acc').
--
-admit.
-Admitted.
+apply (integrate_model_err fis n
+  _ _ 
+ (@gauss_point_f_bound _)
+ (@gauss_point_f_acc _)
+ (@gauss_weight_f_acc _)
+   fb g H1 b H0 d H4 f f_acc fun_acc' H6).
+Qed.
 
 (** Finally we build an Abstract Specification Interface (ASI) containing all the instantiated specs *)
 Definition quadrules_ASI: funspecs :=
