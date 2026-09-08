@@ -257,7 +257,7 @@ Definition gauss2d_npoint1d_spec : ident * funspec :=
   approximations of the real-valued Gauss points and weights, so 
   we import all the appropriate stuff now. *)
 
-From CFEM Require Import quadrature quadrature2 quadmodel_accuracy.  Import Nearest. Import Legendre.
+From CFEM Require Import quadrature quadrature2 quadmodel_accuracy.  Import Legendre.
 Require Import Interval.Tactic.
 From mathcomp Require Import Rstruct.
 From Stdlib Require Import Reals.
@@ -474,16 +474,6 @@ Definition hughes_weight: R := 1/6.
     RETURN ( Vfloat w )
     SEP().
 
-(* 
-
-  Lemma legendre_quadrature_error': forall (n: 'I_5) (f: R->R),
-   let GW := nth_iseq some_gauss_weights n in
-      exists ξ:R, -1 <= ξ <= 1 /\
-       ∫ f - Gauss_Legendre_quadrature n f =  
-       derive1n (2*n+2) f ξ / 
-        (factorial(2*n+2))%:R * ∫ (fun x => (horner (legendre n.+1) x)^2).
-*)
-
 Definition realfun_spec (f: R -> R) (acc: R) : funspec :=
  WITH x: ftype Tdouble
  PRE [ tdouble ]
@@ -535,72 +525,31 @@ Definition fun_acc (f: ftype Tdouble -> ftype Tdouble) (g: R -> R) (b: R) :=
 Definition fun_acc' (f g: R -> R) (b: R) :=
   (forall x: R, -1 <= x <= 1 -> Rabs (f x - g x) <= b)%R.
 
-Section foo.
-Import Init.Datatypes.
-From LAProof.accuracy_proofs Require Import preamble.
-Import float_spec.
-Definition fbound (g: R -> R) (fb: R) := 
-  (forall x : R, is_true (-1 <= x <= 1)%O -> is_true (Rabs (g x) <= fb)%O).
-End foo.
-
-From libValidSDP Require binary_infnan.
-
-Definition LVSDP_NAN : binary_infnan.Nans.
-destruct nans.
-constructor.
-apply conv_nan.
-apply plus_nan.
-apply mult_nan.
-apply div_nan.
-apply abs_nan.
-apply opp_nan.
-apply sqrt_nan.
-apply fma_nan.
-Defined.
-
-Import float_infnan_spec.
-
-Definition fis : Float_infnan_spec := @libValidSDP.binary_infnan.binary_infnan LVSDP_NAN 
-   (fprecp Tdouble) (femax Tdouble)
-       (fprec_gt_one Tdouble) (eq_refl _).
-
-Definition fs := float_infnan_spec.fis fis.
+Definition fbound g fb := forall x : R, -1 <= x <= 1 -> Rabs (g x) <= fb.
 
 Definition integrate_spec : ident * funspec :=
  DECLARE _integrate
  WITH f: ftype Tdouble -> ftype Tdouble, g : R -> R, fb: R, f_acc: R, d: R, p: val, n : 'I_5, b: R, gv: globals
  PRE [ tptr (Tfunction [tdouble] tdouble cc_default), tint ]
     PROP (quadrature_error_bound g n b; 
-                  fbound g fb ; 
+                  fbound g fb; 
                   deriv_bound g d; 
                   fun_acc f g f_acc;
-                  parameter_limits fis  n  fb f_acc)
+                  parameter_limits Tdouble n  fb f_acc)
     PARAMS ( p; Vint (Int.repr (Z.of_nat n)))
     GLOBALS (gv)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)
  POST [ tdouble ]
     EX y: ftype Tdouble,
-    PROP( (Rabs (FT2R y - intgal g) <= integrate_model_acc fis n fb d f_acc + b)%R)
+    PROP( (Rabs (FT2R y - intgal g) <= integrate_model_acc Tdouble n fb d f_acc + b)%R)
     RETURN (Vfloat y)
     SEP( gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p).
 
-(* Module AdaptLibValidSDP. *)
 Import Init.Datatypes.
-From LAProof.accuracy_proofs Require Import preamble libvalidsdp.
-From libValidSDP Require  flocq_float float_spec float_infnan_spec flocq_float binary_infnan binary64.
-Import float_spec.
-
-Notation F' := (@libvalidsdp.F' _ Tdouble).
-Notation F := (float_infnan_spec.FIS fis).
-
-Local Remark F'_is_F:  F' = F.
-Proof. reflexivity. Qed.
-
-Local Remark F_is_Tdouble: F' = ftype Tdouble.
-Proof. reflexivity. Qed.
+From LAProof.accuracy_proofs Require Import preamble common.   (* delete me if possible *)
 
 Lemma gauss_point_f_bound [n: 'I_5]: 
-  (forall i : 'I_n, Rabs (FS_val (@FIS2FS fis (gauss_point_f i))) <= 1).
+  (forall i : 'I_n, Rabs (FT2R (gauss_point_f i)) <= 1).
 Proof.
 revert n.
 intros [n Hn] [i Hi]; simpl in *.
@@ -611,15 +560,12 @@ Qed.
 
 Lemma gauss_point_f_acc [n: 'I_5]:
   (forall i : 'I_n,
-   @float_infnan_spec.finite fis (gauss_point_f i) /\
-   (Rabs (FS_val (@FIS2FS fis (gauss_point_f i)) - bounded_val (gauss_pt n i))%Ri <= eps fis)%O).
+   Binary.is_finite (gauss_point_f i) = true /\
+   (Rabs (FT2R (gauss_point_f i) - gauss_pt n i)%Ri <= half_an_ulp)%O).
 Proof.
 intros.
 pose proof gauss_points_acc n i.
 red in H.
-assert (eps fs = half_an_ulp).
-simpl. unfold flocq_float.eps, half_an_ulp, FPCore.default_rel; simpl; lra.
-rewrite H0; clear H0.
 split.
 -
 clear.
@@ -631,8 +577,6 @@ simpl; auto.
 change @ith_gauss_point with @quadrature2.gauss_pt in H.
 unfold half_an_ulp, FPCore.default_rel in *; simpl in *.
 pose proof gauss_point_f_bound i.
-change (FS_val (@FIS2FS fis (gauss_point_f i))) with (FT2R (gauss_point_f i)) in H0.
-change (Binary.B2R _ _ (gauss_point_f i)) with (FT2R (gauss_point_f i)).
 set x := (FT2R (gauss_point_f i)) in H,H0|-*.
 clearbody x. 
 set (y := quadrature2.gauss_pt n i) in H|-*.
@@ -652,15 +596,12 @@ Qed.
 
 Lemma gauss_weight_f_acc [n: 'I_5]:
   (forall i : 'I_n,
-   @float_infnan_spec.finite fis (gauss_weight_f i) /\
-   (Rabs (FS_val (@FIS2FS fis (gauss_weight_f i)) - bounded_val (gauss_wt n i))%Ri <= eps fis)%O).
+   Binary.is_finite (gauss_weight_f i) = true /\
+   (Rabs (FT2R (gauss_weight_f i) - gauss_wt n i)%Ri <= half_an_ulp)%O).
 Proof.
 intros.
 pose proof gauss_weights_acc n i.
 red in H.
-assert (eps fs = half_an_ulp).
-simpl. unfold flocq_float.eps, half_an_ulp, FPCore.default_rel; simpl; lra.
-rewrite H0; clear H0.
 split.
 -
 clear.
@@ -720,85 +661,28 @@ apply Rabs_le.
 lra.
 Qed.
 
-
-Lemma fisum_l2r_rec_congr: forall [n] (c c': ftype Tdouble) (a a': F^n),
- FT2R c = FT2R c' -> 
-  (forall i, FT2R (a i) = FT2R (a' i)) ->
-  FT2R (@fisum_l2r_rec fis _ c a) = FT2R (@fisum_l2r_rec fis n c' a').
-Admitted.
+Import dotprod_model.
+Import sum_model.
 
 Lemma integrate_model_equiv:
   forall (n: 'I_5) (f: ftype Tdouble -> ftype Tdouble),
   FT2R (integrate_model n f) =
-  FT2R (integrate_model_f fis n (@gauss_point_f n) (@gauss_weight_f n) f).
+  FT2R (integrate_model_f Tdouble _ n (@gauss_point_f n) (@gauss_weight_f n) f).
 Proof.
 intros.
-rewrite /integrate_model /integrate_model_f.
+rewrite /integrate_model /integrate_model_f /quadmodel_accuracy.dotprod.
 rewrite F.sum_sumF.
-replace (@fimult fis) with (@BMULT _ Tdouble).
-2:{
-extensionality x y.
-unfold fimult; simpl; unfold binary_infnan.fimult; simpl.
-unfold BMULT, BINOP; simpl.
-f_equal.
-apply ProofIrrelevance.proof_irrelevance.
-}
-set g := fun _ => _.
-clearbody g. clear f.
-unfold fisum_l2r.
-destruct n as [n Hn].
-simpl in *.
-destruct n; [ reflexivity | ].
-rewrite ffunE.
-transitivity 
-(FT2R
-  (fisum_l2r_rec fis common.neg_zero [ffun i => g i])).
-2:{ 
-simpl.
-rewrite ffunE. 
-set a := (finfun.body _).
-clearbody a. simpl in a.
-apply fisum_l2r_rec_congr; auto.
-destruct (g ord0); try destruct s; try reflexivity.
-}
-f_equal.
-unfold sum_model.sumF.
-replace [ffun i => g i] with [ffun i : 'I_n.+1 => nth (g ord0) (map g (ord_enum n.+1)) (nat_of_ord i)].
-2:{
-apply eq_dffun => i.
-rewrite (nth_map ord0).
-rewrite nth_ord_enum'; auto.
-rewrite size_ord_enum. destruct i;  simpl in *; lia.
-}
-set u := map _ _.
-assert (size u = n.+1). unfold u. rewrite size_map. apply size_ord_enum.
-clearbody u.
-set c := (g ord0).
-clearbody c. clear g.
-clear Hn.
-set d := common.neg_zero. clearbody d.
-revert u H d; induction (n.+1); simpl; intros; auto.
-destruct u; try discriminate. reflexivity.
-destruct u; try discriminate.
-simpl.
-simpl in H. inversion H.
-rewrite (IHn0 u H1).
-rewrite ffunE.
-simpl nth.
-rewrite H1.
-set v := [ffun i => fun_of_fin [ffun i0 => nth c (f :: u) (nat_of_ord i0)]  (lift ord0 i)].
-set v' :=  [ffun i => nth c u (nat_of_ord i)] .
-replace v with v'.
-2:{
-simpl in v, v'.
-subst v v'.
-apply eq_dffun => j. rewrite ffunE. simpl. f_equal.
-}
-f_equal.
-clear.
-unfold Basics.flip, BPLUS, BINOP, binary_infnan.fiplus.
-admit. (* ugh *)
-Admitted.
+apply feq_FT2R.
+rewrite dotprodF_dotprodF'_feq /dotprodF' /dotprod /sumF.
+set c := neg_zero.
+rewrite {1}/c. set c' := neg_zero.
+assert (feq c' c) by reflexivity.
+clearbody c. clearbody c'.
+rewrite zip_map.
+revert c c' H; induction (ord_enum n); simpl; intros; auto.
+apply IHl.
+rewrite ?ffunE H //.
+Qed.
 
 Lemma sub_integrate: funspec_sub (snd integrate_spec_lowlevel) (snd integrate_spec).
 (* begin details: Proof. ... Qed. *)
@@ -817,24 +701,10 @@ Exists (integrate_model n f).
 rewrite integrate_model_equiv.
 entailer!!.
 clear H9 H8 H7 x1 Pp p H3 H2 gv H7 g0.
-rewrite -FS_val_mkFS.
--
-assert (fun_acc':  forall x : binary_infnan.FI,
-   Binary.is_finite x /\ (-1 <= Binary.B2R binary_infnan.prec 1024 x <= 1)%O ->
-   Binary.is_finite (f x) /\
-   Rabs
-     (Binary.B2R binary_infnan.prec 1024 (f x) -
-      g (Binary.B2R binary_infnan.prec 1024 x))%Ri <=
-   f_acc).  {
- intros. simpl. apply (H5 x). destruct H; split; auto.
- apply /RrangeP. apply H2.
-}
-apply (integrate_model_err fis n
-  _ _ 
- (@gauss_point_f_bound _)
- (@gauss_point_f_acc _)
- (@gauss_weight_f_acc _)
-   fb g H1 b H0 d H4 f f_acc fun_acc' H6).
+eapply integrate_model_err; eauto.
+intros; apply gauss_point_f_bound.
+intro i; destruct (gauss_point_f_acc i); split; auto; apply /RleP; auto.
+intro i; destruct (gauss_weight_f_acc i); split; auto; apply /RleP; auto.
 Qed.
 
 (** Finally we build an Abstract Specification Interface (ASI) containing all the instantiated specs *)
