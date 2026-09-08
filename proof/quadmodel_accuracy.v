@@ -77,10 +77,6 @@ Section FLOAT.
 Notation eps := (@default_rel t).
 Notation eta := (@default_abs t).
 
-
-Definition dotprod [n] (a b: F^n) : F :=
- dotprodF (map (fun_of_fin a) (ord_enum n)) (map (fun_of_fin b) (ord_enum n)).
-
  Variable n: 'I_5.
 
  Variable gauss_pt_f: forall (i: 'I_n), F.
@@ -94,9 +90,6 @@ Definition dotprod [n] (a b: F^n) : F :=
  prepare_for_interval.
  apply Rabs_le; auto.
 Qed. 
-(*
- Definition gauss_pt (i: 'I_n) : bounded 1%R := Build_bounded (gauss_pt_range i).
-*)
 
  Lemma gauss_wt_range: forall i, Rabs (gauss_wt n i) <= 2.
  Proof.
@@ -105,14 +98,21 @@ Qed.
  apply Rabs_le; auto. simpl in H. lra.
 Qed.
 
- Definition finite {t} (x: ftype t) := is_true (Binary.is_finite x).
+ Local Definition finite {t} (x: ftype t) := is_true (Binary.is_finite x).
 
- Variable gauss_pts_err: forall (i: 'I_n),  finite (gauss_pt_f i) /\ Rabs (FT2R (gauss_pt_f i) - gauss_pt n i) <= eps.
- Variable gauss_wts_err: forall (i: 'I_n), finite (gauss_wt_f i) /\  Rabs (FT2R (gauss_wt_f i) - gauss_wt n i) <= eps.
+ Definition gauss_pts_accuracy := forall (i: 'I_n),  finite (gauss_pt_f i) /\ Rabs (FT2R (gauss_pt_f i) - gauss_pt n i) <= eps.
+
+ Variable gauss_pts_err: gauss_pts_accuracy.
+
+ Definition gauss_wts_accuracy := forall (i: 'I_n), finite (gauss_wt_f i) /\  Rabs (FT2R (gauss_wt_f i) - gauss_wt n i) <= eps.
+ Variable gauss_wts_err: gauss_wts_accuracy.
 
  Variable (fb: R).
  Variable(g: R -> R).
- Variable Hg: forall x, -1 <= x <= 1 -> Rabs (g x) <= fb.
+
+  Definition fbound g fb := forall x : R, -1 <= x <= 1 -> Rabs (g x) <= fb.
+ Variable Hg: fbound g fb.
+
  Variable (b: R) (Hb: quadrature_error_bound g n b).
  Variable (d: R) (Hd: deriv_bound g d).
 
@@ -120,8 +120,10 @@ Qed.
  Admitted.
 
  Variable (f: F -> F)  (f_acc: R).
- Variable (fun_acc: forall (x: F), finite x /\ -1 <= FT2R x <= 1 -> 
-             finite (f x) /\  Rabs (FT2R (f x) - g (FT2R x)) <= f_acc).
+
+ Definition function_accuracy := forall (x: F), finite x /\ -1 <= FT2R x <= 1 -> 
+             finite (f x) /\  Rabs (FT2R (f x) - g (FT2R x)) <= f_acc.
+ Variable fun_acc: function_accuracy.
 
  Definition parameter_limits : Prop := 
    (1 + n.-1%:R * (eps / (1 + eps))) * 
@@ -162,7 +164,7 @@ Qed.
 Qed.
 
  Definition integrate_model_f  : F :=
-     dotprod [ffun i => gauss_wt_f i] [ffun i => f (gauss_pt_f i)].
+    dotprodF (map gauss_wt_f (ord_enum n)) (map (comp f (gauss_pt_f)) (ord_enum n)).
 
  Definition integrate_model_r : R :=
     \sum_(i<n)  (gauss_wt n i) * g (gauss_pt n i).
@@ -184,10 +186,10 @@ Proof.
  rewrite {}IHl. set c := foldr _ _ _. set c' := foldr _ _ _. clearbody c. clearbody c'.
  clear. prepare_for_interval; lra.
 Qed.
-Lemma gauss_wt_f_range: forall i, 0 <= FT2R (gauss_wt_f i) <= 2.
-Admitted.
 
-Definition foo: R. Admitted.
+Definition gauss_wt_f_range := forall i, 0 <= FT2R (gauss_wt_f i) <= 2.
+
+Variable gauss_wt_f_range_ok: gauss_wt_f_range.
 
 Lemma gauss_pt_wt_limit_aux: 2 * (fb + f_acc) * (1 + eps) + eta < @fmax t.
 Admitted. (* should be fine *)
@@ -220,7 +222,7 @@ destruct (fun_acc (gauss_pt_f i)) as [FINf Hacc].
   split; [apply gauss_pts_err | apply Rabs_le_inv;  apply gauss_pt_f_range].
 assert (Hfb := gauss_pt_f_range i).
 assert (Hgb := Hg (FT2R (gauss_pt_f i)) (Rabs_le_inv _ _ Hfb)).
-assert (Hwb := gauss_wt_f_range i).
+assert (Hwb := gauss_wt_f_range_ok i).
 assert (Rabs (FT2R (f (gauss_pt_f i))) <= fb + f_acc). {
   replace (FT2R (f (gauss_pt_f i))) with (g (FT2R (gauss_pt_f i)) + (FT2R (f (gauss_pt_f i)) - g (FT2R (gauss_pt_f i))))
     by lra.
@@ -393,14 +395,9 @@ intros.
 Qed.
 
 
-Lemma dotprod_dotprodF: forall (af bf: F ^ n),
-   dotprod af bf = dotprodF (map (fun_of_fin af) (ord_enum n))  (map (fun_of_fin bf) (ord_enum n)).
-Admitted.
-
-
 Lemma finite_integrate_model: finite integrate_model_f.
 Proof.
-rewrite /integrate_model_f dotprod_dotprodF.
+rewrite /integrate_model_f.
 apply dotprodF_finite_from_bounded.
 apply Forall2_forall.
 intros.
@@ -502,7 +499,7 @@ Proof.
     Fsum_gauss_wt_pt_finite.
  set a2 := bigop _ _ _ in H,H0. clearbody a2.
  set a3 := FT2R (F.sum _) in H0.
- set a3' := FT2R (dotprod _ _).
+ set a3' := FT2R (dotprodF _ _).
  assert (a3' = a3). {
   rewrite /a3 /a3'.
  rewrite /dotprod.
@@ -570,4 +567,320 @@ Qed.
 
 End FLOAT.
 
+Module Quadmodel_F64.
 
+
+Definition gauss_pts_list : list (ftype Tdouble) :=
+  [      (* One point *)
+         0.0;
+
+        (* Two points *)
+        -0.5773502691896257;
+        0.5773502691896257;
+
+        (* Three points *)
+        -0.7745966692414834;
+        0.0;
+        0.7745966692414834;
+
+        (* Four points *)
+        -0.8611363115940526;
+        -0.33998104358485626;
+        0.33998104358485626;
+        0.8611363115940526;
+
+        (* Five points *)
+        -0.906179845938664;
+        -0.538469310105683;
+        0.0;
+        0.538469310105683;
+        0.906179845938664;
+
+        (* Six points *)
+        -0.932469514203152;
+        -0.661209386466265;
+        -0.238619186083197;
+        0.238619186083197;
+        0.661209386466265;
+        0.932469514203152;
+
+        (* Seven points *)
+        -0.949107912342759;
+        -0.741531185599394;
+        -0.405845151377397;
+        0.0;
+        0.405845151377397;
+        0.741531185599394;
+        0.949107912342759;
+
+        (* Eight points *)
+        -0.960289856497536;
+        -0.796666477413627;
+        -0.525532409916329;
+        -0.183434642495650;
+        0.183434642495650;
+        0.525532409916329;
+        0.796666477413627;
+        0.960289856497536;
+
+        (* Nine points *)
+        -0.968160239507626;
+        -0.836031107326636;
+        -0.613371432700590;
+        -0.324253423403809;
+        0.0;
+        0.324253423403809;
+        0.613371432700590;
+        0.836031107326636;
+        0.968160239507626;
+
+        (* Ten points *)
+        -0.973906528517172;
+        -0.865063366688985;
+        -0.679409568299024;
+        -0.433395394129247;
+        -0.148874338981631;
+        0.148874338981631;
+        0.433395394129247;
+        0.679409568299024;
+        0.865063366688985;
+        0.973906528517172
+  ]%F64.
+
+(** The C program has a local static array containing all these values in this order: *)
+Definition gauss_wts_list : list (ftype Tdouble) := [
+        (* One point *)
+        2.0;
+
+        (* Two points *)
+        1.0;
+        1.0;
+
+        (* Three points *)
+        0.5555555555555556;
+        0.8888888888888889;
+        0.5555555555555556;
+
+        (* Four points *)
+        0.34785484513745384;
+        0.65214515486254616;
+        0.65214515486254616;
+        0.34785484513745384;
+
+        (* Five points *)
+        0.236926885056189;
+        0.478628670499366;
+        0.568888888888889;
+        0.478628670499366;
+        0.236926885056189;
+
+        (* Six points *)
+        0.171324492379170;
+        0.360761573048139;
+        0.467913934572691;
+        0.467913934572691;
+        0.360761573048139;
+        0.171324492379170;
+
+        (* Seven points *)
+        0.129484966168870;
+        0.279705391489277;
+        0.381830050505119;
+        0.417959183673469;
+        0.381830050505119;
+        0.279705391489277;
+        0.129484966168870;
+
+        (* Eight points *)
+        0.101228536290376;
+        0.222381034453374;
+        0.313706645877887;
+        0.362683783378362;
+        0.362683783378362;
+        0.313706645877887;
+        0.222381034453374;
+        0.101228536290376;
+
+        (* Nine points *)
+        0.081274388361574;
+        0.180648160694857;
+        0.260610696402935;
+        0.312347077040003;
+        0.330239355001260;
+        0.312347077040003;
+        0.260610696402935;
+        0.180648160694857;
+        0.081274388361574;
+
+        (* Ten points *)
+        0.066671344308688;
+        0.149451349150581;
+        0.219086362515982;
+        0.269266719309996;
+        0.295524224714753;
+        0.295524224714753;
+        0.269266719309996;
+        0.219086362515982;
+        0.149451349150581;
+        0.066671344308688
+  ]%F64.
+
+
+Definition half_an_ulp : R := FPCore.default_rel (coretype_of_type Tdouble).
+
+Definition float_near (r: R) (x: ftype Tdouble) :=
+  (Rabs (FT2R x - r) <= Rabs (FT2R x) * half_an_ulp)%R.
+
+Require Import VST.floyd.functional_base.
+
+Definition gauss_weight_f [n: 'I_5] (i: 'I_n) := 
+    Znth ((Z.of_nat n)*(Z.of_nat n - 1)/2 + Z.of_nat i) gauss_wts_list.
+
+Definition gauss_point_f [n: 'I_5] (i: 'I_n) := 
+    Znth ((Z.of_nat n)*(Z.of_nat n - 1)/2 + Z.of_nat i) gauss_pts_list.
+
+Lemma gauss_points_acc: forall (n: 'I_5) (i: 'I_n),  float_near (gauss_pt n i) (gauss_point_f i).
+Proof.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+red;
+set (d := half_an_ulp); hnf in d; simpl in d; subst d;
+unfold gauss_pt, gauss_point_f, tuple.tnth; simpl;
+ prepare_for_interval; simpl;
+rewrite <- ?Rstruct.RsqrtE, <- ?Rstruct.INRE, ?Rminus_diag;
+first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+Qed.
+
+Lemma gauss_weights_acc: forall (n: 'I_5) (i: 'I_n),  float_near (gauss_wt n i) (gauss_weight_f i).
+Proof.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+red;
+set (d := half_an_ulp); hnf in d; simpl in d; subst d;
+unfold gauss_wt, gauss_weight_f, tuple.tnth; simpl;
+ prepare_for_interval; 
+first [rewrite ?Rabs_R0; Lra.lra | interval with (i_prec(110%positive))].
+Qed.
+
+Open Scope R_scope.
+
+Lemma gauss_point_f_bound [n: 'I_5]: 
+  (forall i : 'I_n, Rabs (FT2R (gauss_point_f i)) <= 1).
+Proof.
+revert n.
+intros [n Hn] [i Hi]; simpl in *.
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; interval.
+Qed.
+
+Lemma gauss_point_f_acc [n: 'I_5]: gauss_pts_accuracy Tdouble _ (@gauss_point_f n).
+Proof.
+red; intros; unfold quadmodel_accuracy.finite.
+pose proof gauss_points_acc n i.
+red in H.
+split.
+-
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; auto.
+-
+unfold half_an_ulp, FPCore.default_rel in *; simpl in *.
+pose proof gauss_point_f_bound i.
+set x := (FT2R (gauss_point_f i)) in H,H0|-*.
+clearbody x. 
+set (y := quadrature2.gauss_pt n i) in H|-*.
+clearbody y.
+prepare_for_interval.
+simpl in *.
+change (Rplus x (Ropp y)) with (Rminus x y).
+etransitivity. apply H.
+clear H.
+set (z := (/2 * _)).
+assert (0 <= z) by (unfold z; lra).
+unfold default_rel; simpl.
+change (/ _ * / _) with z.
+clearbody z.
+transitivity (1 * z); [ | lra].
+apply Rmult_le_compat_r; auto.
+Qed.
+
+
+Lemma gauss_weight_f_acc [n: 'I_5]: gauss_wts_accuracy Tdouble _ (@gauss_weight_f n).
+Proof.
+red; intros; unfold quadmodel_accuracy.finite.
+pose proof gauss_weights_acc n i.
+red in H.
+split.
+-
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+simpl; auto.
+-
+unfold half_an_ulp, FPCore.default_rel in *; simpl in *.
+assert ((n>1)%nat -> (0 <= FT2R (gauss_weight_f i) <= 1)%R). {
+clear.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try lia;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try lia;
+unfold gauss_weight_f; simpl nat_of_ord;
+intro; try discriminate;
+set z := (Znth _ _); hnf in z; subst z;
+compute; lra.
+}
+destruct n as [n Hn].
+destruct n as [ | [ | n]].
++ (* n=0 *)
+simpl in i; destruct i; lia.
++ (* n=1 *)
+clear.
+simpl in i.
+rewrite ord1. clear i.
+unfold gauss_weight_f, quadrature2.gauss_wt.
+simpl.
+unfold reverse_coercion; simpl.
+unfold tuple.tnth, tuple.cons_tuple; simpl.
+prepare_for_interval.
+transitivity 0; simpl; try lra.
+unfold Defs.F2R. simpl.
+replace (_ - _) with 0 by lra.
+rewrite Rabs_R0. lra.
+compute; lra.
++
+specialize (H0 (eq_refl _)).
+change (Binary.B2R _ _ (gauss_weight_f i)) with (FT2R (gauss_weight_f i)).
+set x := (FT2R (gauss_weight_f i)) in H,H0|-*.
+clearbody x. 
+set (y := quadrature2.gauss_wt _ i) in H|-*.
+clearbody y.
+prepare_for_interval.
+simpl in *.
+change (Rplus x (Ropp y)) with (Rminus x y).
+etransitivity. apply H.
+clear H.
+set (z := (/2 * _)).
+assert (0 <= z) by (unfold z; lra).
+change default_rel with z.
+clearbody z.
+transitivity (1 * z); [ | lra].
+apply Rmult_le_compat_r; auto.
+apply Rabs_le.
+lra.
+Qed.
+
+Lemma gauss_weight_f_range [n]: gauss_wt_f_range Tdouble _ (@gauss_weight_f n).
+Proof.
+red; intros.
+destruct n as [n Hn]; destruct i as [i Hi];
+destruct n as [ | [ | [ | [ | [ |] ]]]]; try discriminate;
+destruct i as [ | [ | [ | [ | [ |] ]]]]; try discriminate;
+compute; lra.
+Qed.
+
+End Quadmodel_F64.
