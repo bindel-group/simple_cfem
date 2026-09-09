@@ -18,6 +18,7 @@ C/verif_shapes2d.v
 C/verif_shapes2dP2.v
 C/VSU_shapes.v
 C/spec_quadrules.v
+C/spec_quadrules_highlevel.v
 C/verif_quadrules.v
 model.v
 matrix_util.v
@@ -26,5 +27,6 @@ shapefloat.v
 shape_accuracy.v
 quadrature.v
 quadrature2.v
+quadmodel.v
 quadmodel_accuracy.v
 

@@ -18,10 +18,9 @@ Set Bullet Behavior "Strict Subproofs".
 
 Open Scope logic.
 
-From CFEM.C Require Import quadrules.
-Require Export CFEM.C.spec_quadrules.
+From CFEM.C Require Import quadrules spec_quadrules spec_quadrules_highlevel.
 
-Import quadmodel_accuracy.Quadmodel_F64.
+Import quadmodel.Quadmodel_F64.
 
 Definition quadrules_E : funspecs := [].
 Definition quadrules_internal_specs : funspecs := quadrules_ASI.
@@ -257,7 +256,7 @@ red.
 change Float.div with (@BDIV _ Tdouble).
 with_strategy transparent [Float.of_bits] unfold Float.of_bits.
 rewrite !Int64.unsigned_repr by rep_lia.
-set (d := half_an_ulp); hnf in d; simpl in d; subst d.
+set (d := common.default_rel); hnf in d; simpl in d; subst d.
 set (x := (_ / _)%F64).
 unfold Bits.b64_of_bits, Bits.binary_float_of_bits, Binary.FF2B in x.
 simpl in x.
