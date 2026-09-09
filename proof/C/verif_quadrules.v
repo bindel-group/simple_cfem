@@ -165,7 +165,7 @@ simpl nat_of_ord.
 rewrite divs_repr; try rep_lia.
 rewrite mods_repr; try rep_lia.
 pose (X := existT (fun n => 'I_(nat_of_ord n)) (Ordinal  Hn) (Ordinal Hx)).
-forward_call (X, gv); clear X.
+forward_call sub_gauss_point (X, gv); clear X.
 entailer!!.
 simpl. f_equal. f_equal. f_equal.
 rewrite <- Nat2Z.inj_mod. f_equal.
@@ -174,7 +174,7 @@ rewrite Nat.Div0.mod_mod, Nat.mod_small; lia.
 Intros x'.
 forward.
 pose (X := existT (fun n => 'I_(nat_of_ord n)) (Ordinal  Hn) (Ordinal Hy)).
-forward_call (X,gv); clear X.
+forward_call sub_gauss_point (X,gv); clear X.
 entailer!!.
 simpl. f_equal. f_equal. f_equal.
 rewrite Nat2Z.inj_add, Nat2Z.inj_mul.
@@ -209,7 +209,7 @@ simpl nat_of_ord.
 rewrite divs_repr; try rep_lia.
 rewrite mods_repr; try rep_lia.
 pose (X := existT (fun n => 'I_(nat_of_ord n)) (Ordinal  Hn) (Ordinal Hi)).
-forward_call (X, gv); clear X.
+forward_call sub_gauss_weight (X, gv); clear X.
 entailer!!.
 simpl. f_equal. f_equal. f_equal.
 rewrite <- Nat2Z.inj_mod. f_equal.
@@ -217,7 +217,7 @@ rewrite Nat.Div0.add_mod, Nat.Div0.mul_mod, Nat.Div0.mod_same, Nat.mul_0_r, Nat.
 rewrite Nat.Div0.mod_mod, Nat.mod_small; lia.
 Intros x'.
 pose (X := existT (fun n => 'I_(nat_of_ord n)) (Ordinal  Hn) (Ordinal Hj)).
-forward_call (X,gv); clear X.
+forward_call sub_gauss_weight (X,gv); clear X.
 entailer!!.
 simpl. f_equal. f_equal. f_equal.
 rewrite Nat2Z.inj_add, Nat2Z.inj_mul.
@@ -271,21 +271,77 @@ rewrite (Rabs_right (_ * _)%R).
 rewrite Rabs_left; compute; Lra.lra.
 Qed.
 
+Import quadmodel. Import Quadmodel_F64.
+Import mv_mathcomp.
 
+Definition sum_upto (f: ftype Tdouble -> ftype Tdouble) (n: 'I_5) (i: Z) :=
+  let il := sublist 0 i (ord_enum (nat_of_ord n)) in
+  dotprod_model.dotprodF 
+     (map (gauss_weight_f n) il) 
+     (map (f oo gauss_point_f n) il).
 
+Lemma sum_upto_n: forall f n,
+  sum_upto f n (Z.of_nat n) = integrate_model_f Tdouble _ n 
+       (gauss_point_f n) (gauss_weight_f n) f.
+Proof.
+intros.
+unfold sum_upto.
+rewrite sublist_same; try lia; auto.
+rewrite Zlength_correct. change @Datatypes.length with @seq.size.
+rewrite size_ord_enum; auto.
+Qed.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+Lemma body_integrate: semax_body Vprog Gprog f_integrate integrate_spec_lowlevel.
+Proof.
+start_function.
+forward.
+forward_for_simple_bound (Z.of_nat n)
+  (EX i: Z, PROP() 
+  LOCAL (temp _s (Vfloat (sum_upto f n i));
+                 gvars gv; temp _f p; temp _n (Vint (Int.repr (Z.of_nat (nat_of_ord n)))))
+   SEP (gauss_pts_pred gv; gauss_wts_pred gv; func_ptr' (floatfun_spec f) p)).
+- destruct n as [n Hn]. simpl. clear - Hn. rep_lia.
+- entailer!!.
+- forward_call (Z.of_nat n, i, gv). destruct n as [n Hn]. simpl in H|-*. rep_lia.
+  forward_call (Z.of_nat n, i, gv). destruct n as [n Hn]. simpl in H|-*. rep_lia.
+  set (pt := Znth _ gauss_pts_list).
+  set (wt := Znth _ gauss_wts_list).
+  assert (Hi': Datatypes.is_true (ssrnat.leq (S (Z.to_nat i)) (nat_of_ord n))).
+  destruct (@ssrnat.ltP (Z.to_nat i)  (nat_of_ord n) ); auto. lia.
+  pose (i' := Ordinal Hi').
+  replace pt with (gauss_point_f n i')
+     by (unfold pt, gauss_point_f; f_equal; f_equal; simpl; lia).
+  replace wt with (gauss_weight_f n i')
+     by (unfold wt, gauss_weight_f; f_equal; f_equal; simpl; lia).
+  clear pt wt.
+  forward_call.
+  forward.
+  entailer!!.
+  f_equal.
+  assert (Zlength (ord_enum (nat_of_ord n)) = Z.of_nat n). {
+    rewrite Zlength_correct. change @Datatypes.length with @seq.size.
+   rewrite size_ord_enum; auto.
+ }
+  unfold sum_upto, dotprod_model.dotprodF, dotprod_model.dotprod.
+  rewrite (sublist_split 0 i (i+1)) by lia.
+  assert (Inh: Inhabitant 'I_(nat_of_ord n))
+     by (apply (@Ordinal _ (Z.to_nat i)); lia).
+  rewrite sublist_len_1 by lia.
+  rewrite ?map_app.
+  change @app with @seq.cat.
+  rewrite seq.zip_cat
+    by (change @seq.size with @length; rewrite ?length_map; auto).
+  rewrite ?seq.map_cat.
+  simpl.
+  replace (Znth i _) with i'. 
+    2:{ unfold Znth. rewrite if_false by lia. rewrite <- nth_List_nth.
+         replace (Z.to_nat i) with (nat_of_ord i') by (simpl; lia).
+          rewrite nth_ord_enum'. auto.
+   }
+ rewrite seq.foldl_cat.
+ reflexivity.
+-
+  forward.
+ rewrite sum_upto_n.
+ entailer!!.
+Qed.

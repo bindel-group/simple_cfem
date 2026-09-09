@@ -481,7 +481,7 @@ intros.
 apply /RleP. apply Rplus_le_compat; apply /RleP;  auto. apply /RleP. auto.
 Qed.
 
-Lemma integrate_model_err_partial: 
+Lemma integrate_model_roundoff_err: 
      Rabs (FT2R integrate_model_f - integrate_model_r) <= integrate_model_acc.
 Proof.
  intros.
@@ -545,7 +545,7 @@ Proof.
   by lra.
  etransitivity; [apply Rabs_triang | ].
  apply Rplus_le_compat.
- apply integrate_model_err_partial.
+ apply integrate_model_roundoff_err.
  apply quadrature_error_bound_is_bound in Hb.
  rewrite Rabs_minus_sym.
  replace integrate_model_r with (Gauss_Legendre_quadrature n g). 2:{

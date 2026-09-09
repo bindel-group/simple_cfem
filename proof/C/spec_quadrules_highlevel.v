@@ -197,9 +197,10 @@ Qed.
 (** Finally we build an Abstract Specification Interface (ASI) containing all the instantiated specs *)
 Definition quadrules_ASI: funspecs :=
  [ gauss2d_npoint1d_spec;
-   gauss_point_spec; gauss_weight_spec;
+   gauss_point_spec_lowlevel; gauss_weight_spec_lowlevel;
    gauss2d_point_spec; gauss2d_weight_spec;
-   hughes_point_spec; hughes_weight_spec
+   hughes_point_spec; hughes_weight_spec;
+   integrate_spec_lowlevel
   ].
 
 

@@ -582,9 +582,9 @@ Definition f_integrate := {|
                                      cc_default)))
                 ((Etempvar _t'2 tdouble) :: nil)))
             (Sset _s
-              (Ebinop Oadd (Etempvar _s tdouble)
+              (Ebinop Oadd
                 (Ebinop Omul (Etempvar _t'1 tdouble) (Etempvar _t'3 tdouble)
-                  tdouble) tdouble))))
+                  tdouble) (Etempvar _s tdouble) tdouble))))
         (Sset _i
           (Ebinop Oadd (Etempvar _i tint) (Econst_int (Int.repr 1) tint)
             tint))))

@@ -3327,6 +3327,15 @@ Qed.
  Definition Gauss_Legendre_quadrature (n: 'I_5):  (R -> R) -> R :=
   compute_G (nth_iseq some_gauss_weights n).
 
+ Definition Gauss_Legendre_quadrature' (n: 'I_5) (f: R -> R) : R :=
+  let GW := nth_iseq some_gauss_weights n in
+  let W := tnth (GW_vals GW) in
+  let P := tnth (ROOTS_vals lo hi w n (LR_roots (GW_legendre GW))) in
+  \sum_i   W i * f (P i).
+
+  Local Remark GL_same: Gauss_Legendre_quadrature = Gauss_Legendre_quadrature'.
+  Proof. reflexivity. Qed.
+
   Lemma legendre_quadrature_error': forall (n: 'I_5) (f: R->R),
    let GW := nth_iseq some_gauss_weights n in
       exists ξ:R, -1 <= ξ <= 1 /\
